@@ -33,6 +33,8 @@ class FakeChatSession:
 
     last_question = ""
     last_session_kind = ""
+    last_runtime_tool_names: tuple[str, ...] = ()
+    last_runtime_rules: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -46,27 +48,57 @@ class FakeChatSession:
         self.session_scope_id = session_scope_id
         FakeChatSession.last_session_kind = session_kind
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self.questions.append(user_input)
         FakeChatSession.last_question = user_input
+        FakeChatSession.last_runtime_tool_names = tuple(
+            getattr(tool, "name", "") for tool in (runtime_tools or ())
+        )
+        FakeChatSession.last_runtime_rules = tuple(str(item) for item in runtime_rules)
         return f"回声:{_extract_message_body(user_input)}"
 
 
 class FakeSplitChatSession(FakeChatSession):
     """返回可显式分段的回复。"""
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self.questions.append(user_input)
         FakeChatSession.last_question = user_input
+        FakeChatSession.last_runtime_tool_names = tuple(
+            getattr(tool, "name", "") for tool in (runtime_tools or ())
+        )
+        FakeChatSession.last_runtime_rules = tuple(str(item) for item in runtime_rules)
         return "第一段[SPLIT]第二段"
 
 
 class FakeAtChatSession(FakeChatSession):
     """返回带艾特标签的回复。"""
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self.questions.append(user_input)
         FakeChatSession.last_question = user_input
+        FakeChatSession.last_runtime_tool_names = tuple(
+            getattr(tool, "name", "") for tool in (runtime_tools or ())
+        )
+        FakeChatSession.last_runtime_rules = tuple(str(item) for item in runtime_rules)
         return '你好 <at qq="123456" /> 请看这里'
 
 
@@ -119,6 +151,8 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                 {"type": "text", "data": {"text": "回声:你好"}},
             ],
         )
+        self.assertNotIn("mute_group_member", FakeChatSession.last_runtime_tool_names)
+        self.assertNotIn("set_group_admin", FakeChatSession.last_runtime_tool_names)
 
     async def test_ignores_non_private_message(self) -> None:
         event = parse_message_event(
@@ -197,6 +231,9 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                 {"type": "text", "data": {"text": "回声:帮我看看"}},
             ],
         )
+        self.assertIn("mute_group_member", FakeChatSession.last_runtime_tool_names)
+        self.assertIn("set_group_admin", FakeChatSession.last_runtime_tool_names)
+        self.assertTrue(FakeChatSession.last_runtime_rules)
 
     async def test_replies_to_group_message_when_named_bot(self) -> None:
         event = parse_message_event(

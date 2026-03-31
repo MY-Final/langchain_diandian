@@ -17,6 +17,8 @@ from chat_app.actions.group_management import (
 )
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
+from chat_app.skills.context import SkillContext
+from chat_app.skills.registry import resolve_skill_runtime
 from onebot_gateway.config import ReplySplitConfig
 from onebot_gateway.message.adapter import (
     AgentInput,
@@ -153,7 +155,12 @@ class ChatService:
             )
 
         session = self._get_session(event)
-        reply_text = session.ask(self._build_model_input(event, agent_input))
+        skill_runtime = resolve_skill_runtime(self._build_skill_context(event))
+        reply_text = session.ask(
+            self._build_model_input(event, agent_input, skill_runtime.rules),
+            runtime_tools=skill_runtime.tools,
+            runtime_rules=skill_runtime.rules,
+        )
         reply_parts = tuple(self._reply_splitter.split(reply_text))
         get_last_tool_traces = getattr(session, "get_last_tool_traces", None)
         tool_traces = (
@@ -570,6 +577,7 @@ class ChatService:
         self,
         event: ParsedMessageEvent,
         agent_input: AgentInput,
+        skill_rules: tuple[str, ...],
     ) -> str:
         lines = [
             "[当前消息]",
@@ -609,22 +617,25 @@ class ChatService:
                 '- 如果需要发图片，可使用 <image file="https://example.com/a.png" />。',
                 '- 如果需要发 QQ 表情，可使用 <face id="14" />。',
                 "- QQ 表情请谨慎使用，只有语气明显合适时才使用，并且一条回复最多使用一个表情。",
-                "- 选择 QQ 表情前，优先调用 search_qq_emojis 工具检索合适的 face id。",
                 "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
-                "- 如需禁言某人，可调用 mute_group_member 工具（需传入 user_id 和 group_id）。",
-                "- 禁言操作受权限限制：owner 可禁言 admin/member，admin 可禁言 member。",
-                "- 如需设置或取消群管理员，可调用 set_group_admin 工具（需传入 user_id 和 group_id）。",
-                "- 设置群管理员权限更严格：只有 owner 可以设置或取消管理员。",
-                "- 如需踢出群成员，可调用 kick_group_member 工具；权限规则与禁言类似。",
-                "- 如需修改群名片，可调用 set_group_card 工具；owner 可改 admin/member，admin 可改 member。",
-                "- 如需设置或清空群头衔，可调用 set_group_special_title 工具；只有 owner 可以执行。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
+                "当前启用技能规则:",
+                *skill_rules,
                 "消息内容:",
                 agent_input.text,
             ]
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _build_skill_context(event: ParsedMessageEvent) -> SkillContext:
+        session_kind = "group" if event.is_group_message() else "private"
+        return SkillContext(
+            session_kind=session_kind,
+            user_id=event.user_id,
+            group_id=event.group_id,
+        )
 
     @staticmethod
     def _format_message_time(message_time: int | None) -> str:

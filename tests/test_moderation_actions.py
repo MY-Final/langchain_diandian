@@ -289,7 +289,13 @@ class FakeMuteChatSession:
     ) -> None:
         self._pending: tuple = ()
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         return "已经禁言了"
 
     def get_last_tool_traces(self) -> tuple:
@@ -302,7 +308,13 @@ class FakeMuteChatSession:
 class FakeMuteChatSessionWithAction(FakeMuteChatSession):
     """返回带有待执行禁言动作的会话。"""
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         from chat_app.actions.group_management import PendingMuteAction
 
         self._pending = (PendingMuteAction(group_id=100, user_id=200, duration=600),)
@@ -312,7 +324,13 @@ class FakeMuteChatSessionWithAction(FakeMuteChatSession):
 class FakeSetAdminChatSessionWithAction(FakeMuteChatSession):
     """返回带有待执行设置管理员动作的会话。"""
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self._pending = (
             PendingSetGroupAdminAction(group_id=100, user_id=200, enable=True),
         )
@@ -322,7 +340,13 @@ class FakeSetAdminChatSessionWithAction(FakeMuteChatSession):
 class FakeUnsetAdminChatSessionWithAction(FakeMuteChatSession):
     """返回带有待执行取消管理员动作的会话。"""
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self._pending = (
             PendingSetGroupAdminAction(group_id=100, user_id=200, enable=False),
         )
@@ -330,7 +354,13 @@ class FakeUnsetAdminChatSessionWithAction(FakeMuteChatSession):
 
 
 class FakeKickChatSessionWithAction(FakeMuteChatSession):
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self._pending = (
             PendingKickGroupMemberAction(
                 group_id=100, user_id=200, reject_add_request=True
@@ -340,7 +370,13 @@ class FakeKickChatSessionWithAction(FakeMuteChatSession):
 
 
 class FakeSetCardChatSessionWithAction(FakeMuteChatSession):
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self._pending = (
             PendingSetGroupCardAction(group_id=100, user_id=200, card="新名片"),
         )
@@ -348,7 +384,13 @@ class FakeSetCardChatSessionWithAction(FakeMuteChatSession):
 
 
 class FakeSetTitleChatSessionWithAction(FakeMuteChatSession):
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
         self._pending = (
             PendingSetGroupSpecialTitleAction(
                 group_id=100, user_id=200, special_title="新人王"

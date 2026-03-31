@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Iterable, Literal
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 
 from chat_app.actions.group_management import (
@@ -23,7 +24,8 @@ from chat_app.memory.store import InMemoryMemoryStore
 from chat_app.memory.summarizer import ConversationSummarizer
 from chat_app.memory.types import MemoryPolicy, MemorySessionScope
 from chat_app.postgres.memory_store import PostgresMemoryStore
-from chat_app.tools.registry import build_chat_tools
+from chat_app.skills.context import SkillContext
+from chat_app.skills.registry import resolve_skill_runtime
 
 
 @dataclass(frozen=True)
@@ -59,16 +61,19 @@ class ChatSession:
             model=config.model,
             temperature=0,
         )
-        self._tools = build_chat_tools()
-        self._tool_enabled_client = (
-            self._client.bind_tools(self._tools) if self._tools else None
-        )
-        self._tool_map = {tool.name: tool for tool in self._tools}
         self._last_tool_traces: list[ToolCallTrace] = []
         self._pending_actions: list[PendingAction] = []
         policy = self._resolve_memory_policy(session_kind)
         memory_scope = self._build_memory_scope(session_kind, session_scope_id)
         memory_store = self._build_memory_store()
+        default_skill_runtime = resolve_skill_runtime(
+            SkillContext(
+                session_kind=session_kind,
+                user_id=memory_scope.user_id,
+                group_id=memory_scope.group_id,
+            )
+        )
+        self._default_runtime_tools = default_skill_runtime.tools
         self._memory = ConversationMemory(
             policy,
             enable_summary=config.memory.enable_summary,
@@ -82,7 +87,13 @@ class ChatSession:
             config.memory.max_summary_chars,
         )
 
-    def ask(self, user_input: str) -> str:
+    def ask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: Iterable[BaseTool] | None = None,
+        runtime_rules: Iterable[str] = (),
+    ) -> str:
         """发送一条用户消息并返回模型回复。"""
         content = user_input.strip()
         if not content:
@@ -90,8 +101,13 @@ class ChatSession:
 
         self._last_tool_traces = []
         self._pending_actions = []
-        messages = self._memory.build_messages(self._config.system_prompt, content)
-        response = self._invoke_with_tools(messages)
+        effective_tools = (
+            tuple(runtime_tools)
+            if runtime_tools is not None
+            else self._default_runtime_tools
+        )
+        messages = self._build_messages(content, runtime_rules)
+        response = self._invoke_with_tools(messages, effective_tools)
         if not isinstance(response, AIMessage):
             raise TypeError("模型返回了无法识别的消息类型。")
 
@@ -110,16 +126,31 @@ class ChatSession:
         """返回最近一次 ask 产生的待执行动作。"""
         return tuple(self._pending_actions)
 
-    def _invoke_with_tools(self, messages: list[object]) -> AIMessage:
-        if self._tool_enabled_client is None:
+    def _build_messages(
+        self, user_input: str, runtime_rules: Iterable[str]
+    ) -> list[BaseMessage]:
+        extra_rules = [rule.strip() for rule in runtime_rules if rule.strip()]
+        if not extra_rules:
+            return self._memory.build_messages(self._config.system_prompt, user_input)
+
+        system_prompt = self._config.system_prompt.strip()
+        skill_prompt = "\n".join([system_prompt, "[当前启用技能规则]", *extra_rules])
+        return self._memory.build_messages(skill_prompt, user_input)
+
+    def _invoke_with_tools(
+        self, messages: list[object], tools: tuple[BaseTool, ...]
+    ) -> AIMessage:
+        tool_map = {tool.name: tool for tool in tools}
+        if not tools:
             response = self._client.invoke(messages)
             if not isinstance(response, AIMessage):
                 raise TypeError("模型返回了无法识别的消息类型。")
             return response
 
+        tool_enabled_client = self._client.bind_tools(list(tools))
         conversation = list(messages)
         for _ in range(5):
-            response = self._tool_enabled_client.invoke(conversation)
+            response = tool_enabled_client.invoke(conversation)
             if not isinstance(response, AIMessage):
                 raise TypeError("模型返回了无法识别的消息类型。")
 
@@ -130,7 +161,7 @@ class ChatSession:
             conversation.append(response)
             for tool_call in tool_calls:
                 tool_name = str(tool_call.get("name", "")).strip()
-                tool = self._tool_map.get(tool_name)
+                tool = tool_map.get(tool_name)
                 if tool is None:
                     tool_result = f"未知工具: {tool_name}"
                 else:

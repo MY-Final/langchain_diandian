@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from onebot_gateway.app.service import PrivateChatService
 from onebot_gateway.message.adapter import build_agent_input
 from onebot_gateway.message.store import MessageStore
 from onebot_gateway.message.trigger import TriggerEvaluator
@@ -17,6 +18,7 @@ async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
     message_store = MessageStore()
+    private_chat_service = PrivateChatService.from_env()
 
     async with OneBotWebSocketClient(config.ws_url, config.token) as client:
         trigger_evaluator = TriggerEvaluator(
@@ -71,6 +73,15 @@ async def main() -> None:
                             indent=2,
                         )
                     )
+
+                    chat_result = await private_chat_service.handle_event(
+                        client,
+                        event,
+                        decision,
+                    )
+                    if chat_result.should_reply:
+                        print("LangChain 回复:")
+                        print(chat_result.reply_text)
             except Exception as exc:
                 print(f"处理消息时出错: {exc}")
 

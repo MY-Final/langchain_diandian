@@ -77,7 +77,7 @@ python -m chat_app --message "你好"
 
 ### 2. 启动 OneBot WebSocket 接收
 
-用于连接 NapCat，并打印收到的原始事件、解析后的 JSON，以及提取后的消息信息：
+用于连接 NapCat，并打印收到的原始事件、解析后的 JSON、触发判断，以及私聊场景下的 LangChain 回复：
 
 ```bash
 python -m onebot_gateway
@@ -95,7 +95,7 @@ python -m onebot_gateway
 - 当前已支持提取：文本内容、发送人、群号、私聊/群聊类型、是否 @ 自己、是否回复消息
 - 当前已支持判断：是否群聊、是否私聊、是否 @ bot、是否通过 bot 名称正则触发、是否回复了 bot 自己、是否回复了一条 @ bot 或点名 bot 的消息、是否应该进入后续处理
 - 当前已支持发送：群消息、私聊消息，发送内容使用 OneBot 消息段数组组织
-- 这一阶段还没有把 OneBot 消息转给 LangChain
+- 当前已支持私聊消息接入 LangChain，并自动引用原消息回复
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
 
 ## 消息发送

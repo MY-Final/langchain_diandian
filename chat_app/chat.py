@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
+from chat_app.actions.types import PendingMuteAction
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
 from chat_app.memory.summarizer import ConversationSummarizer
@@ -53,6 +55,7 @@ class ChatSession:
         )
         self._tool_map = {tool.name: tool for tool in self._tools}
         self._last_tool_traces: list[ToolCallTrace] = []
+        self._pending_actions: list[PendingMuteAction] = []
         policy = self._resolve_memory_policy(session_kind)
         self._memory = ConversationMemory(
             policy,
@@ -72,6 +75,7 @@ class ChatSession:
             raise ValueError("用户输入不能为空。")
 
         self._last_tool_traces = []
+        self._pending_actions = []
         messages = self._memory.build_messages(self._config.system_prompt, content)
         response = self._invoke_with_tools(messages)
         if not isinstance(response, AIMessage):
@@ -87,6 +91,10 @@ class ChatSession:
     def get_last_tool_traces(self) -> tuple[ToolCallTrace, ...]:
         """返回最近一次 ask 的工具调用痕迹。"""
         return tuple(self._last_tool_traces)
+
+    def get_pending_actions(self) -> tuple[PendingMuteAction, ...]:
+        """返回最近一次 ask 产生的待执行动作。"""
+        return tuple(self._pending_actions)
 
     def _invoke_with_tools(self, messages: list[object]) -> AIMessage:
         if self._tool_enabled_client is None:
@@ -122,6 +130,8 @@ class ChatSession:
                     )
                 )
 
+                self._try_parse_mute_action(tool_name, tool_result)
+
                 conversation.append(
                     ToolMessage(
                         content=tool_result,
@@ -143,4 +153,21 @@ class ChatSession:
             max_turns=policy.max_turns,
             summary_trigger_turns=policy.summary_trigger_turns,
             summary_batch_turns=policy.summary_batch_turns,
+        )
+
+    def _try_parse_mute_action(self, tool_name: str, tool_output: str) -> None:
+        if tool_name != "mute_group_member":
+            return
+        try:
+            data = json.loads(tool_output)
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(data, dict) or data.get("action") != "mute_group_member":
+            return
+        self._pending_actions.append(
+            PendingMuteAction(
+                group_id=int(data["group_id"]),
+                user_id=int(data["user_id"]),
+                duration=int(data.get("duration", 0)),
+            )
         )

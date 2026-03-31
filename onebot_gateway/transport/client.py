@@ -91,6 +91,26 @@ class OneBotWebSocketClient:
         data = response.get("data")
         return data if isinstance(data, dict) else None
 
+    async def get_group_member_info(
+        self, group_id: int | str, user_id: int | str, *, no_cache: bool = True
+    ) -> dict[str, Any] | None:
+        """获取群成员信息。"""
+        response = await self.request(
+            "get_group_member_info",
+            {"group_id": str(group_id), "user_id": str(user_id), "no_cache": no_cache},
+        )
+        data = response.get("data")
+        return data if isinstance(data, dict) else None
+
+    async def set_group_ban(
+        self, group_id: int | str, user_id: int | str, duration: int = 0
+    ) -> dict[str, Any]:
+        """群禁言（duration=0 解除禁言）。"""
+        return await self.request(
+            "set_group_ban",
+            {"group_id": str(group_id), "user_id": str(user_id), "duration": duration},
+        )
+
     async def send_group_message(
         self,
         group_id: int | str,

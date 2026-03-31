@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from dataclasses import dataclass
-from typing import Awaitable, Callable, Protocol
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Protocol
 
+from chat_app.actions.types import PendingMuteAction
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
 from onebot_gateway.config import ReplySplitConfig
@@ -18,6 +20,10 @@ from onebot_gateway.message.rich_reply import build_rich_text_reply
 from onebot_gateway.message.reply_splitter import ReplySplitter
 from onebot_gateway.message.trigger import TriggerDecision
 
+logger = logging.getLogger(__name__)
+
+_ROLE_PRIORITY: dict[str, int] = {"owner": 3, "admin": 2, "member": 1}
+
 
 class ChatMessageSender(Protocol):
     """发送 OneBot 消息的协议。"""
@@ -27,6 +33,28 @@ class ChatMessageSender(Protocol):
 
     async def send_group_message(self, group_id: int | str, message: object) -> object:
         """发送群聊消息。"""
+
+    async def get_group_member_info(
+        self, group_id: int | str, user_id: int | str, *, no_cache: bool = True
+    ) -> dict[str, Any] | None:
+        """获取群成员信息。"""
+
+    async def set_group_ban(
+        self, group_id: int | str, user_id: int | str, duration: int = 0
+    ) -> dict[str, Any]:
+        """群禁言。"""
+
+
+@dataclass
+class ActionResult:
+    """单条动作执行结果。"""
+
+    action: str
+    success: bool
+    message: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {"action": self.action, "success": self.success, "message": self.message}
 
 
 @dataclass
@@ -38,6 +66,7 @@ class ChatHandleResult:
     reply_parts: tuple[str, ...]
     tool_traces: tuple[ToolCallTrace, ...]
     agent_input: AgentInput
+    action_results: tuple[ActionResult, ...] = ()
 
 
 DEFAULT_REPLY_SPLIT_CONFIG = ReplySplitConfig(
@@ -103,6 +132,13 @@ class ChatService:
         if not reply_parts:
             reply_parts = (reply_text,)
 
+        pending_actions = self._collect_pending_actions(session)
+        action_results: tuple[ActionResult, ...] = ()
+        if pending_actions:
+            action_results = await self._execute_pending_actions(
+                sender, event, pending_actions
+            )
+
         if event.is_private_message():
             assert event.user_id is not None
             await self._send_reply_parts(
@@ -126,6 +162,7 @@ class ChatService:
                 reply_parts=(),
                 tool_traces=tool_traces,
                 agent_input=agent_input,
+                action_results=action_results,
             )
 
         return ChatHandleResult(
@@ -134,6 +171,7 @@ class ChatService:
             reply_parts=reply_parts,
             tool_traces=tool_traces,
             agent_input=agent_input,
+            action_results=action_results,
         )
 
     async def _send_reply_parts(
@@ -150,6 +188,85 @@ class ChatService:
                 target_id,
                 build_rich_text_reply(part, reply_message_id=quoted_message_id),
             )
+
+    @staticmethod
+    def _collect_pending_actions(
+        session: ChatSession,
+    ) -> tuple[PendingMuteAction, ...]:
+        getter = getattr(session, "get_pending_actions", None)
+        if not callable(getter):
+            return ()
+        return tuple(getter())
+
+    async def _execute_pending_actions(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        actions: tuple[PendingMuteAction, ...],
+    ) -> tuple[ActionResult, ...]:
+        results: list[ActionResult] = []
+        bot_user_id = event.self_id
+        for action in actions:
+            result = await self._execute_one_action(sender, action, bot_user_id)
+            results.append(result)
+            if not result.success:
+                logger.warning("群管动作执行失败: %s", result.message)
+        return tuple(results)
+
+    async def _execute_one_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingMuteAction,
+        bot_user_id: int | None,
+    ) -> ActionResult:
+        target_info = await sender.get_group_member_info(
+            action.group_id, action.user_id
+        )
+        if target_info is None:
+            return ActionResult(
+                action="mute_group_member",
+                success=False,
+                message="无法获取目标成员信息。",
+            )
+
+        target_role = str(target_info.get("role", "member"))
+
+        if bot_user_id is None:
+            return ActionResult(
+                action="mute_group_member",
+                success=False,
+                message="无法确认机器人身份。",
+            )
+
+        bot_info = await sender.get_group_member_info(action.group_id, bot_user_id)
+        if bot_info is None:
+            return ActionResult(
+                action="mute_group_member",
+                success=False,
+                message="无法获取机器人自身群成员信息。",
+            )
+
+        bot_role = str(bot_info.get("role", "member"))
+
+        if not _can_operate(bot_role, target_role):
+            return ActionResult(
+                action="mute_group_member",
+                success=False,
+                message=f"权限不足：{bot_role} 无法禁言 {target_role}。",
+            )
+
+        await sender.set_group_ban(action.group_id, action.user_id, action.duration)
+
+        if action.duration == 0:
+            desc = "已解除禁言"
+        else:
+            desc = f"已禁言 {action.duration} 秒"
+
+        return ActionResult(
+            action="mute_group_member",
+            success=True,
+            message=f"{desc}（目标 {action.user_id}）。",
+        )
 
     def _get_session(self, event: ParsedMessageEvent) -> ChatSession:
         session_key = self._build_session_key(event)
@@ -222,6 +339,8 @@ class ChatService:
                 "- QQ 表情请谨慎使用，只有语气明显合适时才使用，并且一条回复最多使用一个表情。",
                 "- 选择 QQ 表情前，优先调用 search_qq_emojis 工具检索合适的 face id。",
                 "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
+                "- 如需禁言某人，可调用 mute_group_member 工具（需传入 user_id 和 group_id）。",
+                "- 禁言操作受权限限制：owner 可禁言 admin/member，admin 可禁言 member。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "消息内容:",
@@ -238,3 +357,10 @@ class ChatService:
 
     def _reply_splitter_marker(self) -> str:
         return self._reply_splitter.marker
+
+
+def _can_operate(operator_role: str, target_role: str) -> bool:
+    """判断 operator 是否有权操作 target。"""
+    op = _ROLE_PRIORITY.get(operator_role, 0)
+    tgt = _ROLE_PRIORITY.get(target_role, 0)
+    return op > tgt

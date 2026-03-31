@@ -120,6 +120,44 @@ class OneBotWebSocketClient:
             {"group_id": str(group_id), "user_id": str(user_id), "enable": enable},
         )
 
+    async def set_group_kick(
+        self,
+        group_id: int | str,
+        user_id: int | str,
+        reject_add_request: bool = False,
+    ) -> dict[str, Any]:
+        """群踢人。"""
+        return await self.request(
+            "set_group_kick",
+            {
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "reject_add_request": reject_add_request,
+            },
+        )
+
+    async def set_group_card(
+        self, group_id: int | str, user_id: int | str, card: str = ""
+    ) -> dict[str, Any]:
+        """设置或清空群名片。"""
+        return await self.request(
+            "set_group_card",
+            {"group_id": str(group_id), "user_id": str(user_id), "card": card},
+        )
+
+    async def set_group_special_title(
+        self, group_id: int | str, user_id: int | str, special_title: str = ""
+    ) -> dict[str, Any]:
+        """设置或清空群头衔。"""
+        return await self.request(
+            "set_group_special_title",
+            {
+                "group_id": str(group_id),
+                "user_id": str(user_id),
+                "special_title": special_title,
+            },
+        )
+
     async def send_group_message(
         self,
         group_id: int | str,

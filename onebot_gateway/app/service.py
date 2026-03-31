@@ -9,8 +9,11 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from chat_app.actions.group_management import (
     PendingAction,
+    PendingKickGroupMemberAction,
     PendingMuteAction,
+    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupSpecialTitleAction,
 )
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
@@ -52,6 +55,24 @@ class ChatMessageSender(Protocol):
         self, group_id: int | str, user_id: int | str, enable: bool = True
     ) -> dict[str, Any]:
         """设置或取消群管理员。"""
+
+    async def set_group_kick(
+        self,
+        group_id: int | str,
+        user_id: int | str,
+        reject_add_request: bool = False,
+    ) -> dict[str, Any]:
+        """群踢人。"""
+
+    async def set_group_card(
+        self, group_id: int | str, user_id: int | str, card: str = ""
+    ) -> dict[str, Any]:
+        """设置或清空群名片。"""
+
+    async def set_group_special_title(
+        self, group_id: int | str, user_id: int | str, special_title: str = ""
+    ) -> dict[str, Any]:
+        """设置或清空群头衔。"""
 
 
 @dataclass
@@ -222,6 +243,16 @@ class ChatService:
                 result = await self._execute_set_group_admin_action(
                     sender, action, bot_user_id
                 )
+            elif isinstance(action, PendingKickGroupMemberAction):
+                result = await self._execute_kick_action(sender, action, bot_user_id)
+            elif isinstance(action, PendingSetGroupCardAction):
+                result = await self._execute_set_group_card_action(
+                    sender, action, bot_user_id
+                )
+            elif isinstance(action, PendingSetGroupSpecialTitleAction):
+                result = await self._execute_set_group_special_title_action(
+                    sender, action, bot_user_id
+                )
             else:
                 result = ActionResult(
                     action="unknown",
@@ -344,6 +375,167 @@ class ChatService:
             message=f"{desc}（目标 {action.user_id}）。",
         )
 
+    async def _execute_kick_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingKickGroupMemberAction,
+        bot_user_id: int | None,
+    ) -> ActionResult:
+        (
+            target_info,
+            bot_role,
+            target_role,
+            error,
+        ) = await self._load_roles_for_targeted_action(
+            sender, action.group_id, action.user_id, bot_user_id
+        )
+        if error is not None:
+            return error
+        assert target_info is not None
+        assert bot_role is not None
+        assert target_role is not None
+
+        if not _can_operate(bot_role, target_role):
+            return ActionResult(
+                action="kick_group_member",
+                success=False,
+                message=f"权限不足：{bot_role} 无法踢出 {target_role}。",
+            )
+
+        await sender.set_group_kick(
+            action.group_id, action.user_id, action.reject_add_request
+        )
+        return ActionResult(
+            action="kick_group_member",
+            success=True,
+            message=f"已踢出成员 {action.user_id}。",
+        )
+
+    async def _execute_set_group_card_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingSetGroupCardAction,
+        bot_user_id: int | None,
+    ) -> ActionResult:
+        (
+            target_info,
+            bot_role,
+            target_role,
+            error,
+        ) = await self._load_roles_for_targeted_action(
+            sender, action.group_id, action.user_id, bot_user_id
+        )
+        if error is not None:
+            return _with_action(error, "set_group_card")
+        assert target_info is not None
+        assert bot_role is not None
+        assert target_role is not None
+
+        if not _can_operate(bot_role, target_role):
+            return ActionResult(
+                action="set_group_card",
+                success=False,
+                message=f"权限不足：{bot_role} 无法修改 {target_role} 的群名片。",
+            )
+
+        await sender.set_group_card(action.group_id, action.user_id, action.card)
+        desc = "已清空群名片" if not action.card else f"已设置群名片为 {action.card}"
+        return ActionResult(
+            action="set_group_card",
+            success=True,
+            message=f"{desc}（目标 {action.user_id}）。",
+        )
+
+    async def _execute_set_group_special_title_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingSetGroupSpecialTitleAction,
+        bot_user_id: int | None,
+    ) -> ActionResult:
+        (
+            target_info,
+            bot_role,
+            _target_role,
+            error,
+        ) = await self._load_roles_for_targeted_action(
+            sender, action.group_id, action.user_id, bot_user_id
+        )
+        if error is not None:
+            return _with_action(error, "set_group_special_title")
+        assert target_info is not None
+        assert bot_role is not None
+
+        if bot_role != "owner":
+            return ActionResult(
+                action="set_group_special_title",
+                success=False,
+                message=f"权限不足：{bot_role} 无法设置群头衔。",
+            )
+
+        await sender.set_group_special_title(
+            action.group_id, action.user_id, action.special_title
+        )
+        desc = (
+            "已清空群头衔"
+            if not action.special_title
+            else f"已设置群头衔为 {action.special_title}"
+        )
+        return ActionResult(
+            action="set_group_special_title",
+            success=True,
+            message=f"{desc}（目标 {action.user_id}）。",
+        )
+
+    async def _load_roles_for_targeted_action(
+        self,
+        sender: ChatMessageSender,
+        group_id: int,
+        target_user_id: int,
+        bot_user_id: int | None,
+    ) -> tuple[dict[str, Any] | None, str | None, str | None, ActionResult | None]:
+        target_info = await sender.get_group_member_info(group_id, target_user_id)
+        if target_info is None:
+            return (
+                None,
+                None,
+                None,
+                ActionResult(
+                    action="unknown",
+                    success=False,
+                    message="无法获取目标成员信息。",
+                ),
+            )
+
+        target_role = str(target_info.get("role", "member"))
+
+        if bot_user_id is None:
+            return (
+                target_info,
+                None,
+                target_role,
+                ActionResult(
+                    action="unknown",
+                    success=False,
+                    message="无法确认机器人身份。",
+                ),
+            )
+
+        bot_info = await sender.get_group_member_info(group_id, bot_user_id)
+        if bot_info is None:
+            return (
+                target_info,
+                None,
+                target_role,
+                ActionResult(
+                    action="unknown",
+                    success=False,
+                    message="无法获取机器人自身群成员信息。",
+                ),
+            )
+
+        bot_role = str(bot_info.get("role", "member"))
+        return target_info, bot_role, target_role, None
+
     def _get_session(self, event: ParsedMessageEvent) -> ChatSession:
         session_key = self._build_session_key(event)
         session = self._sessions.get(session_key)
@@ -419,6 +611,9 @@ class ChatService:
                 "- 禁言操作受权限限制：owner 可禁言 admin/member，admin 可禁言 member。",
                 "- 如需设置或取消群管理员，可调用 set_group_admin 工具（需传入 user_id 和 group_id）。",
                 "- 设置群管理员权限更严格：只有 owner 可以设置或取消管理员。",
+                "- 如需踢出群成员，可调用 kick_group_member 工具；权限规则与禁言类似。",
+                "- 如需修改群名片，可调用 set_group_card 工具；owner 可改 admin/member，admin 可改 member。",
+                "- 如需设置或清空群头衔，可调用 set_group_special_title 工具；只有 owner 可以执行。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "消息内容:",
@@ -442,3 +637,7 @@ def _can_operate(operator_role: str, target_role: str) -> bool:
     op = _ROLE_PRIORITY.get(operator_role, 0)
     tgt = _ROLE_PRIORITY.get(target_role, 0)
     return op > tgt
+
+
+def _with_action(result: ActionResult, action: str) -> ActionResult:
+    return ActionResult(action=action, success=result.success, message=result.message)

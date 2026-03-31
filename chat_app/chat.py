@@ -11,8 +11,11 @@ from langchain_openai import ChatOpenAI
 
 from chat_app.actions.group_management import (
     PendingAction,
+    PendingKickGroupMemberAction,
     PendingMuteAction,
+    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupSpecialTitleAction,
 )
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
@@ -182,5 +185,35 @@ class ChatSession:
                     group_id=int(data["group_id"]),
                     user_id=int(data["user_id"]),
                     enable=bool(data.get("enable", True)),
+                )
+            )
+            return
+        if tool_name == "kick_group_member" and action_name == "kick_group_member":
+            self._pending_actions.append(
+                PendingKickGroupMemberAction(
+                    group_id=int(data["group_id"]),
+                    user_id=int(data["user_id"]),
+                    reject_add_request=bool(data.get("reject_add_request", False)),
+                )
+            )
+            return
+        if tool_name == "set_group_card" and action_name == "set_group_card":
+            self._pending_actions.append(
+                PendingSetGroupCardAction(
+                    group_id=int(data["group_id"]),
+                    user_id=int(data["user_id"]),
+                    card=str(data.get("card", "")),
+                )
+            )
+            return
+        if (
+            tool_name == "set_group_special_title"
+            and action_name == "set_group_special_title"
+        ):
+            self._pending_actions.append(
+                PendingSetGroupSpecialTitleAction(
+                    group_id=int(data["group_id"]),
+                    user_id=int(data["user_id"]),
+                    special_title=str(data.get("special_title", "")),
                 )
             )

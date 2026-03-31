@@ -43,4 +43,61 @@ class PendingSetGroupAdminAction:
         }
 
 
-PendingAction = PendingMuteAction | PendingSetGroupAdminAction
+@dataclass(frozen=True)
+class PendingKickGroupMemberAction:
+    """待执行的群踢人动作。"""
+
+    group_id: int
+    user_id: int
+    reject_add_request: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action": "kick_group_member",
+            "group_id": self.group_id,
+            "user_id": self.user_id,
+            "reject_add_request": self.reject_add_request,
+        }
+
+
+@dataclass(frozen=True)
+class PendingSetGroupCardAction:
+    """待执行的设置群名片动作。"""
+
+    group_id: int
+    user_id: int
+    card: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action": "set_group_card",
+            "group_id": self.group_id,
+            "user_id": self.user_id,
+            "card": self.card,
+        }
+
+
+@dataclass(frozen=True)
+class PendingSetGroupSpecialTitleAction:
+    """待执行的设置群头衔动作。"""
+
+    group_id: int
+    user_id: int
+    special_title: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action": "set_group_special_title",
+            "group_id": self.group_id,
+            "user_id": self.user_id,
+            "special_title": self.special_title,
+        }
+
+
+PendingAction = (
+    PendingMuteAction
+    | PendingSetGroupAdminAction
+    | PendingKickGroupMemberAction
+    | PendingSetGroupCardAction
+    | PendingSetGroupSpecialTitleAction
+)

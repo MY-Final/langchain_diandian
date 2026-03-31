@@ -7,10 +7,16 @@ import unittest
 from chat_app.actions.group_management import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
+    PendingKickGroupMemberAction,
     PendingMuteAction,
+    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupSpecialTitleAction,
+    kick_group_member,
     mute_group_member,
+    set_group_card,
     set_group_admin,
+    set_group_special_title,
 )
 from chat_app.config import AppConfig
 from onebot_gateway.app.service import ChatService, _can_operate
@@ -50,6 +56,50 @@ class PendingSetGroupAdminActionTests(unittest.TestCase):
                 "group_id": 123,
                 "user_id": 456,
                 "enable": True,
+            },
+        )
+
+
+class PendingOtherGroupActionsTests(unittest.TestCase):
+    """其他群管理 PendingAction 测试。"""
+
+    def test_pending_kick_to_dict(self) -> None:
+        action = PendingKickGroupMemberAction(
+            group_id=123, user_id=456, reject_add_request=True
+        )
+        self.assertEqual(
+            action.to_dict(),
+            {
+                "action": "kick_group_member",
+                "group_id": 123,
+                "user_id": 456,
+                "reject_add_request": True,
+            },
+        )
+
+    def test_pending_card_to_dict(self) -> None:
+        action = PendingSetGroupCardAction(group_id=123, user_id=456, card="新名片")
+        self.assertEqual(
+            action.to_dict(),
+            {
+                "action": "set_group_card",
+                "group_id": 123,
+                "user_id": 456,
+                "card": "新名片",
+            },
+        )
+
+    def test_pending_special_title_to_dict(self) -> None:
+        action = PendingSetGroupSpecialTitleAction(
+            group_id=123, user_id=456, special_title="新人王"
+        )
+        self.assertEqual(
+            action.to_dict(),
+            {
+                "action": "set_group_special_title",
+                "group_id": 123,
+                "user_id": 456,
+                "special_title": "新人王",
             },
         )
 
@@ -108,6 +158,34 @@ class SetGroupAdminToolTests(unittest.TestCase):
         self.assertFalse(data["enable"])
 
 
+class OtherGroupManagementToolTests(unittest.TestCase):
+    """其他群管理工具输出测试。"""
+
+    def test_kick_group_member_returns_valid_json(self) -> None:
+        result = kick_group_member.invoke(
+            {"user_id": 100, "group_id": 200, "reject_add_request": True}
+        )
+        data = json.loads(result)
+        self.assertEqual(data["action"], "kick_group_member")
+        self.assertTrue(data["reject_add_request"])
+
+    def test_set_group_card_returns_valid_json(self) -> None:
+        result = set_group_card.invoke(
+            {"user_id": 100, "group_id": 200, "card": "新名片"}
+        )
+        data = json.loads(result)
+        self.assertEqual(data["action"], "set_group_card")
+        self.assertEqual(data["card"], "新名片")
+
+    def test_set_group_special_title_returns_valid_json(self) -> None:
+        result = set_group_special_title.invoke(
+            {"user_id": 100, "group_id": 200, "special_title": "新人王"}
+        )
+        data = json.loads(result)
+        self.assertEqual(data["action"], "set_group_special_title")
+        self.assertEqual(data["special_title"], "新人王")
+
+
 class CanOperateTests(unittest.TestCase):
     """角色权限判断测试。"""
 
@@ -148,6 +226,9 @@ class FakeActionSender:
         self.member_info: dict[int, dict] = {}
         self.ban_calls: list[tuple[int | str, int | str, int]] = []
         self.admin_calls: list[tuple[int | str, int | str, bool]] = []
+        self.kick_calls: list[tuple[int | str, int | str, bool]] = []
+        self.card_calls: list[tuple[int | str, int | str, str]] = []
+        self.title_calls: list[tuple[int | str, int | str, str]] = []
 
     async def send_private_message(self, user_id: int | str, message: object) -> object:
         self.private_calls.append((user_id, message))
@@ -172,6 +253,27 @@ class FakeActionSender:
         self, group_id: int | str, user_id: int | str, enable: bool = True
     ) -> dict:
         self.admin_calls.append((group_id, user_id, enable))
+        return {"status": "ok", "retcode": 0}
+
+    async def set_group_kick(
+        self,
+        group_id: int | str,
+        user_id: int | str,
+        reject_add_request: bool = False,
+    ) -> dict:
+        self.kick_calls.append((group_id, user_id, reject_add_request))
+        return {"status": "ok", "retcode": 0}
+
+    async def set_group_card(
+        self, group_id: int | str, user_id: int | str, card: str = ""
+    ) -> dict:
+        self.card_calls.append((group_id, user_id, card))
+        return {"status": "ok", "retcode": 0}
+
+    async def set_group_special_title(
+        self, group_id: int | str, user_id: int | str, special_title: str = ""
+    ) -> dict:
+        self.title_calls.append((group_id, user_id, special_title))
         return {"status": "ok", "retcode": 0}
 
 
@@ -219,6 +321,34 @@ class FakeUnsetAdminChatSessionWithAction(FakeMuteChatSession):
             PendingSetGroupAdminAction(group_id=100, user_id=200, enable=False),
         )
         return "已经取消管理员"
+
+
+class FakeKickChatSessionWithAction(FakeMuteChatSession):
+    def ask(self, user_input: str) -> str:
+        self._pending = (
+            PendingKickGroupMemberAction(
+                group_id=100, user_id=200, reject_add_request=True
+            ),
+        )
+        return "已经踢出该成员"
+
+
+class FakeSetCardChatSessionWithAction(FakeMuteChatSession):
+    def ask(self, user_input: str) -> str:
+        self._pending = (
+            PendingSetGroupCardAction(group_id=100, user_id=200, card="新名片"),
+        )
+        return "已经修改群名片"
+
+
+class FakeSetTitleChatSessionWithAction(FakeMuteChatSession):
+    def ask(self, user_input: str) -> str:
+        self._pending = (
+            PendingSetGroupSpecialTitleAction(
+                group_id=100, user_id=200, special_title="新人王"
+            ),
+        )
+        return "已经设置头衔"
 
 
 class ActionExecutionTests(unittest.IsolatedAsyncioTestCase):
@@ -542,6 +672,273 @@ class ActionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user_id, 200)
         self.assertFalse(enable)
         self.assertTrue(result.action_results[0].success)
+
+    async def test_execute_kick_success_as_admin(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "admin"}
+        sender.member_info[200] = {"role": "member"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "把他踢出去"}},
+                ],
+                "raw_message": "把他踢出去",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeKickChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.kick_calls), 1)
+        self.assertTrue(sender.kick_calls[0][2])
+        self.assertTrue(result.action_results[0].success)
+
+    async def test_execute_kick_rejected_for_admin_target(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "admin"}
+        sender.member_info[200] = {"role": "admin"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "把他踢出去"}},
+                ],
+                "raw_message": "把他踢出去",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeKickChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.kick_calls), 0)
+        self.assertFalse(result.action_results[0].success)
+
+    async def test_execute_set_card_success_as_owner(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "owner"}
+        sender.member_info[200] = {"role": "admin"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "把他名片改掉"}},
+                ],
+                "raw_message": "把他名片改掉",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeSetCardChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.card_calls), 1)
+        self.assertEqual(sender.card_calls[0][2], "新名片")
+        self.assertTrue(result.action_results[0].success)
+
+    async def test_execute_set_card_rejected_for_admin_target_by_admin(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "admin"}
+        sender.member_info[200] = {"role": "admin"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "把他名片改掉"}},
+                ],
+                "raw_message": "把他名片改掉",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeSetCardChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.card_calls), 0)
+        self.assertFalse(result.action_results[0].success)
+
+    async def test_execute_set_title_success_as_owner(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "owner"}
+        sender.member_info[200] = {"role": "member"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "给他一个头衔"}},
+                ],
+                "raw_message": "给他一个头衔",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeSetTitleChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.title_calls), 1)
+        self.assertEqual(sender.title_calls[0][2], "新人王")
+        self.assertTrue(result.action_results[0].success)
+
+    async def test_execute_set_title_rejected_for_admin_bot(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "admin"}
+        sender.member_info[200] = {"role": "member"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "给他一个头衔"}},
+                ],
+                "raw_message": "给他一个头衔",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeSetTitleChatSessionWithAction  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertEqual(len(sender.title_calls), 0)
+        self.assertFalse(result.action_results[0].success)
 
 
 if __name__ == "__main__":

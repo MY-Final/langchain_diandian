@@ -11,6 +11,16 @@ from typing import Any
 import websockets
 from websockets.asyncio.client import ClientConnection
 
+from onebot_gateway.message.builder import OutgoingMessageSegment, ensure_segments
+
+
+@dataclass(frozen=True)
+class SendMessageResult:
+    """发送消息结果。"""
+
+    message_id: int | None
+    raw_response: dict[str, Any]
+
 
 @dataclass(frozen=True)
 class IncomingFrame:
@@ -80,6 +90,36 @@ class OneBotWebSocketClient:
         response = await self.request("get_msg", {"message_id": message_id})
         data = response.get("data")
         return data if isinstance(data, dict) else None
+
+    async def send_group_message(
+        self,
+        group_id: int | str,
+        message: str | OutgoingMessageSegment | list[OutgoingMessageSegment],
+    ) -> SendMessageResult:
+        """发送群消息。"""
+        response = await self.request(
+            "send_group_msg",
+            {
+                "group_id": str(group_id),
+                "message": [segment.to_dict() for segment in ensure_segments(message)],
+            },
+        )
+        return _build_send_message_result(response)
+
+    async def send_private_message(
+        self,
+        user_id: int | str,
+        message: str | OutgoingMessageSegment | list[OutgoingMessageSegment],
+    ) -> SendMessageResult:
+        """发送私聊消息。"""
+        response = await self.request(
+            "send_private_msg",
+            {
+                "user_id": str(user_id),
+                "message": [segment.to_dict() for segment in ensure_segments(message)],
+            },
+        )
+        return _build_send_message_result(response)
 
     async def request(
         self,
@@ -151,3 +191,19 @@ class OneBotWebSocketClient:
         except json.JSONDecodeError:
             return None
         return data if isinstance(data, dict) else None
+
+
+def _build_send_message_result(response: dict[str, Any]) -> SendMessageResult:
+    data = response.get("data")
+    message_id: int | None = None
+    if isinstance(data, dict):
+        raw_message_id = data.get("message_id")
+        if isinstance(raw_message_id, int):
+            message_id = raw_message_id
+        elif isinstance(raw_message_id, str) and raw_message_id.strip():
+            try:
+                message_id = int(raw_message_id)
+            except ValueError:
+                message_id = None
+
+    return SendMessageResult(message_id=message_id, raw_response=response)

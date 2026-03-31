@@ -7,6 +7,13 @@
 - `chat_app`：命令行对话入口
 - `onebot_gateway`：连接 NapCat 并接收 OneBot WebSocket 事件
 
+当前也已经支持通过 OneBot WebSocket action 发送消息。
+
+`onebot_gateway` 当前按职责拆成两层：
+
+- `transport/`：WebSocket 连接、事件接收、OneBot action 请求与发送消息
+- `message/`：消息解析、消息段构造、触发判断、消息缓存、给 LangChain 的 adapter
+
 ## 环境准备
 
 建议使用项目自带虚拟环境：
@@ -87,8 +94,57 @@ python -m onebot_gateway
 - `onebot_gateway` 当前会解析 OneBot 消息事件，并提取适合后续智能体使用的字段
 - 当前已支持提取：文本内容、发送人、群号、私聊/群聊类型、是否 @ 自己、是否回复消息
 - 当前已支持判断：是否群聊、是否私聊、是否 @ bot、是否通过 bot 名称正则触发、是否回复了 bot 自己、是否回复了一条 @ bot 或点名 bot 的消息、是否应该进入后续处理
+- 当前已支持发送：群消息、私聊消息，发送内容使用 OneBot 消息段数组组织
 - 这一阶段还没有把 OneBot 消息转给 LangChain
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
+
+## 消息发送
+
+`onebot_gateway.transport.client.OneBotWebSocketClient` 现在支持：
+
+实际导入路径为 `onebot_gateway.transport.client.OneBotWebSocketClient`。
+
+- `send_group_message(group_id, message)`
+- `send_private_message(user_id, message)`
+
+`message` 可以直接传字符串，也可以传消息段列表。
+
+文本发送示例：
+
+```python
+await client.send_group_message(515587773, "你好")
+```
+
+多消息段示例：
+
+```python
+from onebot_gateway.message.builder import at_segment, text_segment
+from onebot_gateway.transport.client import OneBotWebSocketClient
+
+await client.send_group_message(
+    515587773,
+    [
+        text_segment("你好 "),
+        at_segment(10001),
+        text_segment(" 看这里"),
+    ],
+)
+```
+
+如果后面要支持更多类型，可以继续使用：
+
+- `reply_segment(message_id)`
+- `image_segment(file)`
+- `custom_segment(segment_type, **data)`
+
+## Adapter
+
+`onebot_gateway.message.adapter` 用来隔离 OneBot 协议细节和上层智能体。
+
+- `build_agent_input(event, decision)`：把 OneBot 事件压平成更适合 LangChain 的输入结构
+- `build_text_reply(text, reply_message_id=None)`：把上层回复文本转成 OneBot 消息段
+
+后面接 LangChain 时，建议只在边界层接触 OneBot 原始结构，业务层尽量只使用 adapter 产出的对象。
 
 ## 测试
 

@@ -5,21 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 
-from onebot_gateway.client import OneBotWebSocketClient
+from onebot_gateway.message.adapter import build_agent_input
+from onebot_gateway.message.store import MessageStore
+from onebot_gateway.message.trigger import TriggerEvaluator
+from onebot_gateway.transport.client import OneBotWebSocketClient
 from onebot_gateway.config import load_onebot_config
-from onebot_gateway.event_parser import parse_message_event
-from onebot_gateway.message_store import MessageStore
-from onebot_gateway.trigger import TriggerEvaluator
+from onebot_gateway.message.parser import parse_message_event
 
 
 async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
     message_store = MessageStore()
-    trigger_evaluator = TriggerEvaluator(
-        config.bot_name_patterns,
-        message_store=message_store,
-    )
 
     async with OneBotWebSocketClient(config.ws_url, config.token) as client:
         trigger_evaluator = TriggerEvaluator(
@@ -61,6 +58,15 @@ async def main() -> None:
                     print(
                         json.dumps(
                             decision.to_dict(),
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+
+                    print("适配后的智能体输入:")
+                    print(
+                        json.dumps(
+                            build_agent_input(event, decision).to_dict(),
                             ensure_ascii=False,
                             indent=2,
                         )

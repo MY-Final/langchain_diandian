@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from onebot_gateway.event_parser import parse_message_event
+from onebot_gateway.message.parser import parse_message_event
 
 
 class ParseMessageEventTests(unittest.TestCase):

@@ -1,4 +1,4 @@
-from onebot_gateway.receiver import run
+from onebot_gateway.transport.receiver import run
 
 
 if __name__ == "__main__":

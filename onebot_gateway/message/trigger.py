@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from onebot_gateway.event_parser import ParsedMessageEvent, parse_message_payload
-from onebot_gateway.message_store import CachedMessage, MessageStore
+from onebot_gateway.message.parser import ParsedMessageEvent, parse_message_payload
+from onebot_gateway.message.store import CachedMessage, MessageStore
 
 
 class ReplyMessageResolver(Protocol):

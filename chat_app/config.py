@@ -22,6 +22,9 @@ DEFAULT_GROUP_SUMMARY_TRIGGER_TURNS = 12
 DEFAULT_GROUP_SUMMARY_BATCH_TURNS = 4
 DEFAULT_MEMORY_MAX_SUMMARY_CHARS = 1200
 DEFAULT_MEMORY_MAX_INPUT_CHARS = 12000
+DEFAULT_POSTGRES_PORT = 5432
+DEFAULT_POSTGRES_SSLMODE = "prefer"
+DEFAULT_POSTGRES_CONNECT_TIMEOUT = 10
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,51 @@ class MemoryConfig:
     max_input_chars: int
     private_policy: MemoryPolicyConfig
     group_policy: MemoryPolicyConfig
+
+
+@dataclass(frozen=True)
+class PostgresConfig:
+    """PostgreSQL 连接配置。"""
+
+    enabled: bool
+    dsn: str
+    host: str
+    port: int
+    database: str
+    user: str
+    password: str
+    sslmode: str
+    connect_timeout: int
+
+    def to_connection_kwargs(self) -> dict[str, object]:
+        """返回 psycopg 连接参数。"""
+        if self.dsn:
+            return {"conninfo": self.dsn, "connect_timeout": self.connect_timeout}
+
+        return {
+            "host": self.host,
+            "port": self.port,
+            "dbname": self.database,
+            "user": self.user,
+            "password": self.password,
+            "sslmode": self.sslmode,
+            "connect_timeout": self.connect_timeout,
+        }
+
+
+def default_postgres_config() -> PostgresConfig:
+    """返回默认 PostgreSQL 配置。"""
+    return PostgresConfig(
+        enabled=False,
+        dsn="",
+        host="127.0.0.1",
+        port=DEFAULT_POSTGRES_PORT,
+        database="",
+        user="",
+        password="",
+        sslmode=DEFAULT_POSTGRES_SSLMODE,
+        connect_timeout=DEFAULT_POSTGRES_CONNECT_TIMEOUT,
+    )
 
 
 def default_memory_config() -> MemoryConfig:
@@ -72,6 +120,7 @@ class AppConfig:
     model: str
     system_prompt: str
     memory: MemoryConfig = field(default_factory=default_memory_config)
+    postgres: PostgresConfig = field(default_factory=default_postgres_config)
     debug_tool_calls: bool = False
 
 
@@ -142,6 +191,7 @@ def load_config() -> AppConfig:
         model=model,
         system_prompt=resolved_prompt,
         memory=load_memory_config(),
+        postgres=load_postgres_config(),
         debug_tool_calls=_parse_bool(os.getenv("CHAT_DEBUG_TOOL_CALLS", "false")),
     )
 
@@ -178,6 +228,53 @@ def load_memory_config() -> MemoryConfig:
             default_trigger_turns=DEFAULT_GROUP_SUMMARY_TRIGGER_TURNS,
             default_batch_turns=DEFAULT_GROUP_SUMMARY_BATCH_TURNS,
         ),
+    )
+
+
+def load_postgres_config() -> PostgresConfig:
+    """从环境变量读取 PostgreSQL 配置。"""
+    dsn = os.getenv("POSTGRES_DSN", "").strip()
+    enabled = _parse_bool(os.getenv("POSTGRES_ENABLED", "false")) or bool(dsn)
+    host = os.getenv("POSTGRES_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    port = _parse_positive_int(
+        os.getenv("POSTGRES_PORT", ""),
+        DEFAULT_POSTGRES_PORT,
+        "POSTGRES_PORT",
+    )
+    database = os.getenv("POSTGRES_DB", "").strip()
+    user = os.getenv("POSTGRES_USER", "").strip()
+    password = os.getenv("POSTGRES_PASSWORD", "")
+    sslmode = os.getenv("POSTGRES_SSLMODE", DEFAULT_POSTGRES_SSLMODE).strip()
+    connect_timeout = _parse_positive_int(
+        os.getenv("POSTGRES_CONNECT_TIMEOUT", ""),
+        DEFAULT_POSTGRES_CONNECT_TIMEOUT,
+        "POSTGRES_CONNECT_TIMEOUT",
+    )
+
+    if enabled and not dsn:
+        missing_keys = [
+            key
+            for key, value in (
+                ("POSTGRES_HOST", host),
+                ("POSTGRES_DB", database),
+                ("POSTGRES_USER", user),
+            )
+            if not value
+        ]
+        if missing_keys:
+            joined = ", ".join(missing_keys)
+            raise ValueError(f"缺少 PostgreSQL 配置：{joined}")
+
+    return PostgresConfig(
+        enabled=enabled,
+        dsn=dsn,
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        password=password,
+        sslmode=sslmode or DEFAULT_POSTGRES_SSLMODE,
+        connect_timeout=connect_timeout,
     )
 
 

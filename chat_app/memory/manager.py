@@ -6,7 +6,9 @@ from typing import Protocol
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
+from chat_app.memory.store import InMemoryMemoryStore, MemoryStore
 from chat_app.memory.types import ConversationTurn, MemoryPolicy
+from chat_app.memory.types import MemorySessionScope, MemorySnapshot
 
 
 SUMMARY_PREFIX = "以下是历史对话摘要，请在后续回复中保持一致并延续上下文："
@@ -29,13 +31,23 @@ class ConversationMemory:
         enable_summary: bool,
         max_summary_chars: int,
         max_input_chars: int,
+        store: MemoryStore | None = None,
+        scope: MemorySessionScope | None = None,
     ) -> None:
         self._policy = policy
         self._enable_summary = enable_summary
         self._max_summary_chars = max_summary_chars
         self._max_input_chars = max_input_chars
-        self._summary_text = ""
-        self._turns: list[ConversationTurn] = []
+        self._store = store or InMemoryMemoryStore()
+        self._scope = scope or MemorySessionScope(
+            session_key="memory:default",
+            session_kind="private",
+            user_id=0,
+            group_id=None,
+        )
+        snapshot = self._store.load_snapshot(self._scope)
+        self._summary_text = snapshot.summary_text
+        self._turns: list[ConversationTurn] = list(snapshot.turns)
 
     def build_messages(self, system_prompt: str, user_input: str) -> list[BaseMessage]:
         """构造当前调用模型所需的消息列表。"""
@@ -76,12 +88,15 @@ class ConversationMemory:
 
         if not self._enable_summary or summarizer is None:
             self._turns = self._turns[-self._policy.max_turns :]
+            self._persist_state()
             return
 
         try:
             self._compress_history(summarizer)
         except Exception:
             self._turns = self._turns[-self._policy.max_turns :]
+
+        self._persist_state()
 
     @property
     def summary_text(self) -> str:
@@ -107,6 +122,15 @@ class ConversationMemory:
 
     def _visible_turns(self) -> list[ConversationTurn]:
         return self._turns[-self._policy.max_turns :]
+
+    def _persist_state(self) -> None:
+        self._store.save_snapshot(
+            self._scope,
+            MemorySnapshot(
+                summary_text=self._summary_text,
+                turns=tuple(self._turns),
+            ),
+        )
 
     def _compose_messages(
         self,

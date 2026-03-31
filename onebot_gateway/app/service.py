@@ -540,7 +540,11 @@ class ChatService:
         session_key = self._build_session_key(event)
         session = self._sessions.get(session_key)
         if session is None:
-            session = ChatSession(self._config, session_kind=session_key[0])
+            session = ChatSession(
+                self._config,
+                session_kind=session_key[0],
+                session_scope_id=session_key[1],
+            )
             self._sessions[session_key] = session
         return session
 

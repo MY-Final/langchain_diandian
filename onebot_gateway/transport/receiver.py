@@ -6,6 +6,7 @@ import asyncio
 import json
 
 from chat_app.config import load_config
+from chat_app.postgres import ensure_postgres_ready
 from onebot_gateway.app.service import ChatService
 from onebot_gateway.message.adapter import build_agent_input
 from onebot_gateway.message.store import MessageStore
@@ -19,6 +20,7 @@ async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
     app_config = load_config()
+    ensure_postgres_ready(app_config)
     message_store = MessageStore()
     chat_service = ChatService(
         app_config,

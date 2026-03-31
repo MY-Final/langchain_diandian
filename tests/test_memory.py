@@ -7,7 +7,9 @@ import unittest
 from langchain_core.messages import AIMessage
 
 from chat_app.memory.manager import ConversationMemory
+from chat_app.memory.store import InMemoryMemoryStore
 from chat_app.memory.types import MemoryPolicy
+from chat_app.memory.types import MemorySessionScope
 
 
 class FakeSummarizer:
@@ -107,6 +109,46 @@ class ConversationMemoryTests(unittest.TestCase):
         ]
         self.assertEqual(
             contents, ["system", "user-2", "ai-2", "user-3", "ai-3", "current"]
+        )
+
+    def test_can_restore_persisted_snapshot_from_shared_store(self) -> None:
+        store = InMemoryMemoryStore()
+        scope = MemorySessionScope(
+            session_key="private:123",
+            session_kind="private",
+            user_id=123,
+            group_id=None,
+        )
+        policy = MemoryPolicy(
+            max_turns=2, summary_trigger_turns=3, summary_batch_turns=1
+        )
+
+        first_memory = ConversationMemory(
+            policy,
+            enable_summary=False,
+            max_summary_chars=500,
+            max_input_chars=5000,
+            store=store,
+            scope=scope,
+        )
+        first_memory.add_turn("user-0", AIMessage(content="ai-0"), None)
+        first_memory.add_turn("user-1", AIMessage(content="ai-1"), None)
+
+        second_memory = ConversationMemory(
+            policy,
+            enable_summary=False,
+            max_summary_chars=500,
+            max_input_chars=5000,
+            store=store,
+            scope=scope,
+        )
+
+        messages = second_memory.build_messages("system", "current")
+        contents = [
+            message.content for message in messages if isinstance(message.content, str)
+        ]
+        self.assertEqual(
+            contents, ["system", "user-0", "ai-0", "user-1", "ai-1", "current"]
         )
 
 

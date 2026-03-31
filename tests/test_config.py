@@ -8,7 +8,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from chat_app.config import load_dotenv_file, load_memory_config, load_prompt_text
+from chat_app.config import (
+    load_dotenv_file,
+    load_memory_config,
+    load_postgres_config,
+    load_prompt_text,
+)
 
 
 class LoadDotenvFileTests(unittest.TestCase):
@@ -84,6 +89,60 @@ class LoadMemoryConfigTests(unittest.TestCase):
                 ValueError, "PRIVATE_CHAT_MEMORY_SUMMARY_TRIGGER_TURNS"
             ):
                 load_memory_config()
+
+
+class LoadPostgresConfigTests(unittest.TestCase):
+    """验证 PostgreSQL 配置加载。"""
+
+    def test_uses_dsn_when_provided(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "POSTGRES_DSN": "postgresql://user:pwd@127.0.0.1:5432/diandian",
+            },
+            clear=True,
+        ):
+            config = load_postgres_config()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.dsn, "postgresql://user:pwd@127.0.0.1:5432/diandian")
+
+    def test_loads_split_connection_fields(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "POSTGRES_ENABLED": "true",
+                "POSTGRES_HOST": "db.example.com",
+                "POSTGRES_PORT": "5433",
+                "POSTGRES_DB": "diandian",
+                "POSTGRES_USER": "bot_user",
+                "POSTGRES_PASSWORD": "secret",
+                "POSTGRES_SSLMODE": "require",
+                "POSTGRES_CONNECT_TIMEOUT": "5",
+            },
+            clear=True,
+        ):
+            config = load_postgres_config()
+
+        self.assertTrue(config.enabled)
+        self.assertEqual(config.host, "db.example.com")
+        self.assertEqual(config.port, 5433)
+        self.assertEqual(config.database, "diandian")
+        self.assertEqual(config.user, "bot_user")
+        self.assertEqual(config.password, "secret")
+        self.assertEqual(config.sslmode, "require")
+        self.assertEqual(config.connect_timeout, 5)
+
+    def test_requires_database_and_user_when_enabled_without_dsn(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "POSTGRES_ENABLED": "true",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "POSTGRES_DB"):
+                load_postgres_config()
 
 
 if __name__ == "__main__":

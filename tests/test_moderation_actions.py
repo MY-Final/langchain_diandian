@@ -280,7 +280,13 @@ class FakeActionSender:
 class FakeMuteChatSession:
     """返回带禁言工具输出的会话。"""
 
-    def __init__(self, _config: AppConfig, *, session_kind: str = "private") -> None:
+    def __init__(
+        self,
+        _config: AppConfig,
+        *,
+        session_kind: str = "private",
+        session_scope_id: int = 0,
+    ) -> None:
         self._pending: tuple = ()
 
     def ask(self, user_input: str) -> str:

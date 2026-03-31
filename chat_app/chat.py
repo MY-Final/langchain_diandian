@@ -19,8 +19,10 @@ from chat_app.actions.group_management import (
 )
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
+from chat_app.memory.store import InMemoryMemoryStore
 from chat_app.memory.summarizer import ConversationSummarizer
-from chat_app.memory.types import MemoryPolicy
+from chat_app.memory.types import MemoryPolicy, MemorySessionScope
+from chat_app.postgres.memory_store import PostgresMemoryStore
 from chat_app.tools.registry import build_chat_tools
 
 
@@ -48,6 +50,7 @@ class ChatSession:
         config: AppConfig,
         *,
         session_kind: Literal["private", "group"] = "private",
+        session_scope_id: int = 0,
     ) -> None:
         self._config = config
         self._client = ChatOpenAI(
@@ -64,11 +67,15 @@ class ChatSession:
         self._last_tool_traces: list[ToolCallTrace] = []
         self._pending_actions: list[PendingAction] = []
         policy = self._resolve_memory_policy(session_kind)
+        memory_scope = self._build_memory_scope(session_kind, session_scope_id)
+        memory_store = self._build_memory_store()
         self._memory = ConversationMemory(
             policy,
             enable_summary=config.memory.enable_summary,
             max_summary_chars=config.memory.max_summary_chars,
             max_input_chars=config.memory.max_input_chars,
+            store=memory_store,
+            scope=memory_scope,
         )
         self._summarizer = ConversationSummarizer(
             self._client,
@@ -160,6 +167,31 @@ class ChatSession:
             max_turns=policy.max_turns,
             summary_trigger_turns=policy.summary_trigger_turns,
             summary_batch_turns=policy.summary_batch_turns,
+        )
+
+    def _build_memory_store(self) -> InMemoryMemoryStore | PostgresMemoryStore:
+        if self._config.postgres.enabled:
+            return PostgresMemoryStore(self._config.postgres)
+        return InMemoryMemoryStore()
+
+    @staticmethod
+    def _build_memory_scope(
+        session_kind: Literal["private", "group"], session_scope_id: int
+    ) -> MemorySessionScope:
+        normalized_scope_id = int(session_scope_id)
+        if session_kind == "group":
+            return MemorySessionScope(
+                session_key=f"group:{normalized_scope_id}",
+                session_kind="group",
+                user_id=None,
+                group_id=normalized_scope_id,
+            )
+
+        return MemorySessionScope(
+            session_key=f"private:{normalized_scope_id}",
+            session_kind="private",
+            user_id=normalized_scope_id,
+            group_id=None,
         )
 
     def _try_parse_pending_action(self, tool_name: str, tool_output: str) -> None:

@@ -20,3 +20,21 @@ class ConversationTurn:
 
     user_text: str
     assistant_text: str
+
+
+@dataclass(frozen=True)
+class MemorySessionScope:
+    """单个会话的记忆作用域。"""
+
+    session_key: str
+    session_kind: str
+    user_id: int | None
+    group_id: int | None
+
+
+@dataclass(frozen=True)
+class MemorySnapshot:
+    """可持久化的记忆快照。"""
+
+    summary_text: str
+    turns: tuple[ConversationTurn, ...]

@@ -34,9 +34,16 @@ class FakeChatSession:
     last_question = ""
     last_session_kind = ""
 
-    def __init__(self, _config: AppConfig, *, session_kind: str = "private") -> None:
+    def __init__(
+        self,
+        _config: AppConfig,
+        *,
+        session_kind: str = "private",
+        session_scope_id: int = 0,
+    ) -> None:
         self.questions: list[str] = []
         self.session_kind = session_kind
+        self.session_scope_id = session_scope_id
         FakeChatSession.last_session_kind = session_kind
 
     def ask(self, user_input: str) -> str:

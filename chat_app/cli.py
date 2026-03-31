@@ -7,6 +7,7 @@ import sys
 
 from chat_app.chat import ChatSession
 from chat_app.config import AppConfig, load_config
+from chat_app.postgres import ensure_postgres_ready
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,6 +57,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     config = load_config()
+    ensure_postgres_ready(config)
     session = ChatSession(config)
 
     if args.message:

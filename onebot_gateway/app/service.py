@@ -7,7 +7,11 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
-from chat_app.actions.types import PendingMuteAction
+from chat_app.actions.types import (
+    PendingAction,
+    PendingMuteAction,
+    PendingSetGroupAdminAction,
+)
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
 from onebot_gateway.config import ReplySplitConfig
@@ -43,6 +47,11 @@ class ChatMessageSender(Protocol):
         self, group_id: int | str, user_id: int | str, duration: int = 0
     ) -> dict[str, Any]:
         """群禁言。"""
+
+    async def set_group_admin(
+        self, group_id: int | str, user_id: int | str, enable: bool = True
+    ) -> dict[str, Any]:
+        """设置或取消群管理员。"""
 
 
 @dataclass
@@ -192,7 +201,7 @@ class ChatService:
     @staticmethod
     def _collect_pending_actions(
         session: ChatSession,
-    ) -> tuple[PendingMuteAction, ...]:
+    ) -> tuple[PendingAction, ...]:
         getter = getattr(session, "get_pending_actions", None)
         if not callable(getter):
             return ()
@@ -202,18 +211,29 @@ class ChatService:
         self,
         sender: ChatMessageSender,
         event: ParsedMessageEvent,
-        actions: tuple[PendingMuteAction, ...],
+        actions: tuple[PendingAction, ...],
     ) -> tuple[ActionResult, ...]:
         results: list[ActionResult] = []
         bot_user_id = event.self_id
         for action in actions:
-            result = await self._execute_one_action(sender, action, bot_user_id)
+            if isinstance(action, PendingMuteAction):
+                result = await self._execute_mute_action(sender, action, bot_user_id)
+            elif isinstance(action, PendingSetGroupAdminAction):
+                result = await self._execute_set_group_admin_action(
+                    sender, action, bot_user_id
+                )
+            else:
+                result = ActionResult(
+                    action="unknown",
+                    success=False,
+                    message=f"未知 action 类型: {type(action).__name__}",
+                )
             results.append(result)
             if not result.success:
                 logger.warning("群管动作执行失败: %s", result.message)
         return tuple(results)
 
-    async def _execute_one_action(
+    async def _execute_mute_action(
         self,
         sender: ChatMessageSender,
         action: PendingMuteAction,
@@ -264,6 +284,62 @@ class ChatService:
 
         return ActionResult(
             action="mute_group_member",
+            success=True,
+            message=f"{desc}（目标 {action.user_id}）。",
+        )
+
+    async def _execute_set_group_admin_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingSetGroupAdminAction,
+        bot_user_id: int | None,
+    ) -> ActionResult:
+        if bot_user_id is None:
+            return ActionResult(
+                action="set_group_admin",
+                success=False,
+                message="无法确认机器人身份。",
+            )
+
+        bot_info = await sender.get_group_member_info(action.group_id, bot_user_id)
+        if bot_info is None:
+            return ActionResult(
+                action="set_group_admin",
+                success=False,
+                message="无法获取机器人自身群成员信息。",
+            )
+
+        bot_role = str(bot_info.get("role", "member"))
+        if bot_role != "owner":
+            return ActionResult(
+                action="set_group_admin",
+                success=False,
+                message=f"权限不足：{bot_role} 无法设置群管理员。",
+            )
+
+        target_info = await sender.get_group_member_info(
+            action.group_id, action.user_id
+        )
+        if target_info is None:
+            return ActionResult(
+                action="set_group_admin",
+                success=False,
+                message="无法获取目标成员信息。",
+            )
+
+        target_role = str(target_info.get("role", "member"))
+        if action.enable and target_role == "owner":
+            return ActionResult(
+                action="set_group_admin",
+                success=False,
+                message="群主不能被设置为管理员。",
+            )
+
+        await sender.set_group_admin(action.group_id, action.user_id, action.enable)
+
+        desc = "已设置群管理员" if action.enable else "已取消群管理员"
+        return ActionResult(
+            action="set_group_admin",
             success=True,
             message=f"{desc}（目标 {action.user_id}）。",
         )
@@ -341,6 +417,8 @@ class ChatService:
                 "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
                 "- 如需禁言某人，可调用 mute_group_member 工具（需传入 user_id 和 group_id）。",
                 "- 禁言操作受权限限制：owner 可禁言 admin/member，admin 可禁言 member。",
+                "- 如需设置或取消群管理员，可调用 set_group_admin 工具（需传入 user_id 和 group_id）。",
+                "- 设置群管理员权限更严格：只有 owner 可以设置或取消管理员。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "消息内容:",

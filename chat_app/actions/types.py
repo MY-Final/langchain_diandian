@@ -24,3 +24,23 @@ class PendingMuteAction:
             "user_id": self.user_id,
             "duration": self.duration,
         }
+
+
+@dataclass(frozen=True)
+class PendingSetGroupAdminAction:
+    """待执行的设置群管理员动作。"""
+
+    group_id: int
+    user_id: int
+    enable: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "action": "set_group_admin",
+            "group_id": self.group_id,
+            "user_id": self.user_id,
+            "enable": self.enable,
+        }
+
+
+PendingAction = PendingMuteAction | PendingSetGroupAdminAction

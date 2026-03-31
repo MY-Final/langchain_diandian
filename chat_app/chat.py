@@ -9,7 +9,11 @@ from typing import Any, Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
-from chat_app.actions.types import PendingMuteAction
+from chat_app.actions.types import (
+    PendingAction,
+    PendingMuteAction,
+    PendingSetGroupAdminAction,
+)
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
 from chat_app.memory.summarizer import ConversationSummarizer
@@ -55,7 +59,7 @@ class ChatSession:
         )
         self._tool_map = {tool.name: tool for tool in self._tools}
         self._last_tool_traces: list[ToolCallTrace] = []
-        self._pending_actions: list[PendingMuteAction] = []
+        self._pending_actions: list[PendingAction] = []
         policy = self._resolve_memory_policy(session_kind)
         self._memory = ConversationMemory(
             policy,
@@ -92,7 +96,7 @@ class ChatSession:
         """返回最近一次 ask 的工具调用痕迹。"""
         return tuple(self._last_tool_traces)
 
-    def get_pending_actions(self) -> tuple[PendingMuteAction, ...]:
+    def get_pending_actions(self) -> tuple[PendingAction, ...]:
         """返回最近一次 ask 产生的待执行动作。"""
         return tuple(self._pending_actions)
 
@@ -130,7 +134,7 @@ class ChatSession:
                     )
                 )
 
-                self._try_parse_mute_action(tool_name, tool_result)
+                self._try_parse_pending_action(tool_name, tool_result)
 
                 conversation.append(
                     ToolMessage(
@@ -155,19 +159,28 @@ class ChatSession:
             summary_batch_turns=policy.summary_batch_turns,
         )
 
-    def _try_parse_mute_action(self, tool_name: str, tool_output: str) -> None:
-        if tool_name != "mute_group_member":
-            return
+    def _try_parse_pending_action(self, tool_name: str, tool_output: str) -> None:
         try:
             data = json.loads(tool_output)
         except (json.JSONDecodeError, TypeError):
             return
-        if not isinstance(data, dict) or data.get("action") != "mute_group_member":
+        if not isinstance(data, dict):
             return
-        self._pending_actions.append(
-            PendingMuteAction(
-                group_id=int(data["group_id"]),
-                user_id=int(data["user_id"]),
-                duration=int(data.get("duration", 0)),
+        action_name = str(data.get("action", "")).strip()
+        if tool_name == "mute_group_member" and action_name == "mute_group_member":
+            self._pending_actions.append(
+                PendingMuteAction(
+                    group_id=int(data["group_id"]),
+                    user_id=int(data["user_id"]),
+                    duration=int(data.get("duration", 0)),
+                )
             )
-        )
+            return
+        if tool_name == "set_group_admin" and action_name == "set_group_admin":
+            self._pending_actions.append(
+                PendingSetGroupAdminAction(
+                    group_id=int(data["group_id"]),
+                    user_id=int(data["user_id"]),
+                    enable=bool(data.get("enable", True)),
+                )
+            )

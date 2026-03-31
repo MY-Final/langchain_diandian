@@ -10,6 +10,7 @@ from chat_app.actions.types import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
     PendingMuteAction,
+    PendingSetGroupAdminAction,
 )
 
 
@@ -26,4 +27,21 @@ def mute_group_member(
     """
     clamped = max(0, min(duration, MAX_MUTE_DURATION))
     action = PendingMuteAction(group_id=group_id, user_id=user_id, duration=clamped)
+    return json.dumps(action.to_dict(), ensure_ascii=False)
+
+
+@tool
+def set_group_admin(user_id: int, group_id: int, enable: bool = True) -> str:
+    """设置或取消群管理员。
+
+    调用后会生成一条待执行指令，由服务层校验权限并执行。
+    - enable=true 表示设置管理员，false 表示取消管理员。
+    - 仅群聊场景可用。
+    - 该操作权限严格，默认只有 owner 可以执行。
+    """
+    action = PendingSetGroupAdminAction(
+        group_id=group_id,
+        user_id=user_id,
+        enable=enable,
+    )
     return json.dumps(action.to_dict(), ensure_ascii=False)

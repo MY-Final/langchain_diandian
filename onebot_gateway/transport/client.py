@@ -111,6 +111,15 @@ class OneBotWebSocketClient:
             {"group_id": str(group_id), "user_id": str(user_id), "duration": duration},
         )
 
+    async def set_group_admin(
+        self, group_id: int | str, user_id: int | str, enable: bool = True
+    ) -> dict[str, Any]:
+        """设置或取消群管理员。"""
+        return await self.request(
+            "set_group_admin",
+            {"group_id": str(group_id), "user_id": str(user_id), "enable": enable},
+        )
+
     async def send_group_message(
         self,
         group_id: int | str,

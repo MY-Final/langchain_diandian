@@ -6,7 +6,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Protocol
 
-from chat_app.chat import ChatSession
+from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
 from onebot_gateway.config import ReplySplitConfig
 from onebot_gateway.message.adapter import (
@@ -36,6 +36,7 @@ class ChatHandleResult:
     should_reply: bool
     reply_text: str
     reply_parts: tuple[str, ...]
+    tool_traces: tuple[ToolCallTrace, ...]
     agent_input: AgentInput
 
 
@@ -88,12 +89,17 @@ class ChatService:
                 should_reply=False,
                 reply_text="",
                 reply_parts=(),
+                tool_traces=(),
                 agent_input=agent_input,
             )
 
         session = self._get_session(event)
         reply_text = session.ask(self._build_model_input(event, agent_input))
         reply_parts = tuple(self._reply_splitter.split(reply_text))
+        get_last_tool_traces = getattr(session, "get_last_tool_traces", None)
+        tool_traces = (
+            tuple(get_last_tool_traces()) if callable(get_last_tool_traces) else ()
+        )
         if not reply_parts:
             reply_parts = (reply_text,)
 
@@ -118,6 +124,7 @@ class ChatService:
                 should_reply=False,
                 reply_text="",
                 reply_parts=(),
+                tool_traces=tool_traces,
                 agent_input=agent_input,
             )
 
@@ -125,6 +132,7 @@ class ChatService:
             should_reply=True,
             reply_text=reply_text,
             reply_parts=reply_parts,
+            tool_traces=tool_traces,
             agent_input=agent_input,
         )
 
@@ -211,6 +219,8 @@ class ChatService:
                 '- 如需在群里艾特某人，请使用 XML 标签格式，例如 <at qq="123456" />。',
                 '- 如果需要发图片，可使用 <image file="https://example.com/a.png" />。',
                 '- 如果需要发 QQ 表情，可使用 <face id="14" />。',
+                "- QQ 表情请谨慎使用，只有语气明显合适时才使用，并且一条回复最多使用一个表情。",
+                "- 选择 QQ 表情前，优先调用 search_qq_emojis 工具检索合适的 face id。",
                 "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",

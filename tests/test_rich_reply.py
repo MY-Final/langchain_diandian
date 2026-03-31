@@ -38,6 +38,17 @@ class RichReplyTests(unittest.TestCase):
             ],
         )
 
+    def test_parses_face_tag(self) -> None:
+        segments = parse_rich_reply_segments('收到 <face id="14" />')
+
+        self.assertEqual(
+            [segment.to_dict() for segment in segments],
+            [
+                {"type": "text", "data": {"text": "收到 "}},
+                {"type": "face", "data": {"id": "14"}},
+            ],
+        )
+
     def test_build_reply_can_prepend_quote_segment(self) -> None:
         segments = build_rich_text_reply(
             '你好 <at qq="123456" />', reply_message_id=789

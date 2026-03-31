@@ -72,6 +72,7 @@ class AppConfig:
     model: str
     system_prompt: str
     memory: MemoryConfig = field(default_factory=default_memory_config)
+    debug_tool_calls: bool = False
 
 
 def load_dotenv_file(env_path: Path = DEFAULT_ENV_PATH) -> None:
@@ -141,6 +142,7 @@ def load_config() -> AppConfig:
         model=model,
         system_prompt=resolved_prompt,
         memory=load_memory_config(),
+        debug_tool_calls=_parse_bool(os.getenv("CHAT_DEBUG_TOOL_CALLS", "false")),
     )
 
 

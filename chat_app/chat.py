@@ -2,15 +2,33 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
 from chat_app.memory.summarizer import ConversationSummarizer
 from chat_app.memory.types import MemoryPolicy
+from chat_app.tools.registry import build_chat_tools
+
+
+@dataclass(frozen=True)
+class ToolCallTrace:
+    """单次工具调用痕迹。"""
+
+    tool_name: str
+    tool_args: dict[str, object]
+    tool_output: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "tool_name": self.tool_name,
+            "tool_args": self.tool_args,
+            "tool_output": self.tool_output,
+        }
 
 
 class ChatSession:
@@ -29,6 +47,12 @@ class ChatSession:
             model=config.model,
             temperature=0,
         )
+        self._tools = build_chat_tools()
+        self._tool_enabled_client = (
+            self._client.bind_tools(self._tools) if self._tools else None
+        )
+        self._tool_map = {tool.name: tool for tool in self._tools}
+        self._last_tool_traces: list[ToolCallTrace] = []
         policy = self._resolve_memory_policy(session_kind)
         self._memory = ConversationMemory(
             policy,
@@ -47,8 +71,9 @@ class ChatSession:
         if not content:
             raise ValueError("用户输入不能为空。")
 
+        self._last_tool_traces = []
         messages = self._memory.build_messages(self._config.system_prompt, content)
-        response = self._client.invoke(messages)
+        response = self._invoke_with_tools(messages)
         if not isinstance(response, AIMessage):
             raise TypeError("模型返回了无法识别的消息类型。")
 
@@ -58,6 +83,53 @@ class ChatSession:
 
         self._memory.add_turn(content, response, self._summarizer)
         return reply
+
+    def get_last_tool_traces(self) -> tuple[ToolCallTrace, ...]:
+        """返回最近一次 ask 的工具调用痕迹。"""
+        return tuple(self._last_tool_traces)
+
+    def _invoke_with_tools(self, messages: list[object]) -> AIMessage:
+        if self._tool_enabled_client is None:
+            response = self._client.invoke(messages)
+            if not isinstance(response, AIMessage):
+                raise TypeError("模型返回了无法识别的消息类型。")
+            return response
+
+        conversation = list(messages)
+        for _ in range(5):
+            response = self._tool_enabled_client.invoke(conversation)
+            if not isinstance(response, AIMessage):
+                raise TypeError("模型返回了无法识别的消息类型。")
+
+            tool_calls = getattr(response, "tool_calls", [])
+            if not tool_calls:
+                return response
+
+            conversation.append(response)
+            for tool_call in tool_calls:
+                tool_name = str(tool_call.get("name", "")).strip()
+                tool = self._tool_map.get(tool_name)
+                if tool is None:
+                    tool_result = f"未知工具: {tool_name}"
+                else:
+                    tool_result = str(tool.invoke(tool_call.get("args", {})))
+
+                self._last_tool_traces.append(
+                    ToolCallTrace(
+                        tool_name=tool_name,
+                        tool_args=dict(tool_call.get("args", {})),
+                        tool_output=tool_result,
+                    )
+                )
+
+                conversation.append(
+                    ToolMessage(
+                        content=tool_result,
+                        tool_call_id=str(tool_call.get("id", "")),
+                    )
+                )
+
+        raise RuntimeError("模型工具调用次数过多。")
 
     def _resolve_memory_policy(
         self, session_kind: Literal["private", "group"]

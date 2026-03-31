@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from chat_app.chat import ChatSession
-from chat_app.config import load_config
+from chat_app.config import AppConfig, load_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,9 +30,9 @@ def configure_console_encoding() -> None:
             reconfigure(encoding="utf-8")
 
 
-def run_interactive_chat() -> int:
+def run_interactive_chat(config: AppConfig) -> int:
     """运行简单的交互式对话。"""
-    session = ChatSession(load_config())
+    session = ChatSession(config)
     print("已连接到模型，输入内容开始对话，输入 quit / exit 结束。")
 
     while True:
@@ -47,6 +47,7 @@ def run_interactive_chat() -> int:
 
         answer = session.ask(user_input)
         print(f"助手: {answer}")
+        _print_tool_traces(session, config)
 
 
 def main() -> int:
@@ -54,13 +55,29 @@ def main() -> int:
     configure_console_encoding()
     parser = build_parser()
     args = parser.parse_args()
-    session = ChatSession(load_config())
+    config = load_config()
+    session = ChatSession(config)
 
     if args.message:
         print(session.ask(args.message))
+        _print_tool_traces(session, config)
         return 0
 
-    return run_interactive_chat()
+    return run_interactive_chat(config)
+
+
+def _print_tool_traces(session: ChatSession, config: AppConfig) -> None:
+    if not config.debug_tool_calls:
+        return
+
+    traces = session.get_last_tool_traces()
+    if not traces:
+        return
+
+    print("工具调用:")
+    for trace in traces:
+        print(f"- {trace.tool_name}: args={trace.tool_args}")
+        print(f"  result={trace.tool_output}")
 
 
 if __name__ == "__main__":

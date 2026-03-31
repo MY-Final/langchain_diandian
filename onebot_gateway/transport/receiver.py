@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
+from chat_app.config import load_config
 from onebot_gateway.app.service import ChatService
 from onebot_gateway.message.adapter import build_agent_input
 from onebot_gateway.message.store import MessageStore
@@ -17,8 +18,10 @@ from onebot_gateway.message.parser import parse_message_event
 async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
+    app_config = load_config()
     message_store = MessageStore()
-    chat_service = ChatService.from_env(
+    chat_service = ChatService(
+        app_config,
         reply_with_quote=config.reply_with_quote,
         reply_split_config=config.reply_split,
     )
@@ -86,6 +89,15 @@ async def main() -> None:
                         print("LangChain 回复:")
                         print(chat_result.reply_text)
                         print(f"分段发送数量: {len(chat_result.reply_parts)}")
+                    if app_config.debug_tool_calls and chat_result.tool_traces:
+                        print("Tool 调用记录:")
+                        print(
+                            json.dumps(
+                                [trace.to_dict() for trace in chat_result.tool_traces],
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                        )
             except Exception as exc:
                 print(f"处理消息时出错: {exc}")
 

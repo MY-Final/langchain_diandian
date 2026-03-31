@@ -16,6 +16,7 @@ class OneBotAdapterTests(unittest.IsolatedAsyncioTestCase):
         event = parse_message_event(
             {
                 "self_id": 10001,
+                "time": 1774928987,
                 "user_id": 20002,
                 "message_id": 30003,
                 "message_type": "group",
@@ -33,6 +34,7 @@ class OneBotAdapterTests(unittest.IsolatedAsyncioTestCase):
         agent_input = build_agent_input(event, decision)
 
         self.assertEqual(agent_input.text, "点点 帮我看看")
+        self.assertEqual(agent_input.time, 1774928987)
         self.assertEqual(agent_input.sender_id, 20002)
         self.assertEqual(agent_input.sender_name, "群名片A")
         self.assertEqual(agent_input.chat_type, "group")

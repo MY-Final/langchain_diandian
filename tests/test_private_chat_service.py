@@ -30,12 +30,25 @@ class FakeSender:
 class FakeChatSession:
     """用于替代真实 LangChain 会话。"""
 
-    def __init__(self, _config: AppConfig) -> None:
+    last_question = ""
+    last_session_kind = ""
+
+    def __init__(self, _config: AppConfig, *, session_kind: str = "private") -> None:
         self.questions: list[str] = []
+        self.session_kind = session_kind
+        FakeChatSession.last_session_kind = session_kind
 
     def ask(self, user_input: str) -> str:
         self.questions.append(user_input)
-        return f"回声:{user_input}"
+        FakeChatSession.last_question = user_input
+        return f"回声:{_extract_message_body(user_input)}"
+
+
+def _extract_message_body(user_input: str) -> str:
+    marker = "消息内容:\n"
+    if marker not in user_input:
+        return user_input
+    return user_input.split(marker, 1)[1].strip()
 
 
 class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -191,6 +204,42 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.should_reply)
         self.assertEqual(result.reply_text, "回声:点点 你好")
         self.assertEqual(len(sender.group_calls), 1)
+
+    async def test_builds_group_prompt_with_sender_and_time(self) -> None:
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "time": 1774928987,
+                "user_id": 20002,
+                "message_id": 30008,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [{"type": "text", "data": {"text": "点点 帮我看看"}}],
+                "raw_message": "点点 帮我看看",
+                "post_type": "message",
+                "group_id": 123,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator((r"点点",)).evaluate(event)
+        sender = FakeSender()
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("onebot_gateway.app.service.ChatSession", FakeChatSession):
+            service = ChatService(config)
+            await service.handle_event(sender, event, decision)
+
+        self.assertIn("时间: ", FakeChatSession.last_question)
+        self.assertIn("发送者昵称: 用户A", FakeChatSession.last_question)
+        self.assertIn("群名片: 群名片A", FakeChatSession.last_question)
+        self.assertIn("消息内容:\n点点 帮我看看", FakeChatSession.last_question)
+        self.assertEqual(FakeChatSession.last_session_kind, "group")
 
     async def test_ignores_group_message_without_trigger(self) -> None:
         event = parse_message_event(

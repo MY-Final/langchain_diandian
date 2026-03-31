@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -11,6 +11,56 @@ DEFAULT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 DEFAULT_PROMPT_PATH = (
     Path(__file__).resolve().parent.parent / "prompts" / "system_prompt.txt"
 )
+
+
+DEFAULT_ENABLE_SUMMARY = True
+DEFAULT_PRIVATE_MAX_TURNS = 12
+DEFAULT_PRIVATE_SUMMARY_TRIGGER_TURNS = 16
+DEFAULT_PRIVATE_SUMMARY_BATCH_TURNS = 6
+DEFAULT_GROUP_MAX_TURNS = 8
+DEFAULT_GROUP_SUMMARY_TRIGGER_TURNS = 12
+DEFAULT_GROUP_SUMMARY_BATCH_TURNS = 4
+DEFAULT_MEMORY_MAX_SUMMARY_CHARS = 1200
+DEFAULT_MEMORY_MAX_INPUT_CHARS = 12000
+
+
+@dataclass(frozen=True)
+class MemoryPolicyConfig:
+    """单种会话场景的记忆窗口配置。"""
+
+    max_turns: int
+    summary_trigger_turns: int
+    summary_batch_turns: int
+
+
+@dataclass(frozen=True)
+class MemoryConfig:
+    """会话记忆配置。"""
+
+    enable_summary: bool
+    max_summary_chars: int
+    max_input_chars: int
+    private_policy: MemoryPolicyConfig
+    group_policy: MemoryPolicyConfig
+
+
+def default_memory_config() -> MemoryConfig:
+    """返回默认记忆配置。"""
+    return MemoryConfig(
+        enable_summary=DEFAULT_ENABLE_SUMMARY,
+        max_summary_chars=DEFAULT_MEMORY_MAX_SUMMARY_CHARS,
+        max_input_chars=DEFAULT_MEMORY_MAX_INPUT_CHARS,
+        private_policy=MemoryPolicyConfig(
+            max_turns=DEFAULT_PRIVATE_MAX_TURNS,
+            summary_trigger_turns=DEFAULT_PRIVATE_SUMMARY_TRIGGER_TURNS,
+            summary_batch_turns=DEFAULT_PRIVATE_SUMMARY_BATCH_TURNS,
+        ),
+        group_policy=MemoryPolicyConfig(
+            max_turns=DEFAULT_GROUP_MAX_TURNS,
+            summary_trigger_turns=DEFAULT_GROUP_SUMMARY_TRIGGER_TURNS,
+            summary_batch_turns=DEFAULT_GROUP_SUMMARY_BATCH_TURNS,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -21,6 +71,7 @@ class AppConfig:
     base_url: str
     model: str
     system_prompt: str
+    memory: MemoryConfig = field(default_factory=default_memory_config)
 
 
 def load_dotenv_file(env_path: Path = DEFAULT_ENV_PATH) -> None:
@@ -89,4 +140,94 @@ def load_config() -> AppConfig:
         base_url=base_url,
         model=model,
         system_prompt=resolved_prompt,
+        memory=load_memory_config(),
     )
+
+
+def load_memory_config() -> MemoryConfig:
+    """从环境变量读取会话记忆配置。"""
+    return MemoryConfig(
+        enable_summary=_parse_bool(
+            os.getenv("CHAT_MEMORY_ENABLE_SUMMARY", str(DEFAULT_ENABLE_SUMMARY))
+        ),
+        max_summary_chars=_parse_positive_int(
+            os.getenv("CHAT_MEMORY_MAX_SUMMARY_CHARS", ""),
+            DEFAULT_MEMORY_MAX_SUMMARY_CHARS,
+            "CHAT_MEMORY_MAX_SUMMARY_CHARS",
+        ),
+        max_input_chars=_parse_positive_int(
+            os.getenv("CHAT_MEMORY_MAX_INPUT_CHARS", ""),
+            DEFAULT_MEMORY_MAX_INPUT_CHARS,
+            "CHAT_MEMORY_MAX_INPUT_CHARS",
+        ),
+        private_policy=_load_memory_policy(
+            max_turns_key="PRIVATE_CHAT_MEMORY_MAX_TURNS",
+            trigger_turns_key="PRIVATE_CHAT_MEMORY_SUMMARY_TRIGGER_TURNS",
+            batch_turns_key="PRIVATE_CHAT_MEMORY_SUMMARY_BATCH_TURNS",
+            default_max_turns=DEFAULT_PRIVATE_MAX_TURNS,
+            default_trigger_turns=DEFAULT_PRIVATE_SUMMARY_TRIGGER_TURNS,
+            default_batch_turns=DEFAULT_PRIVATE_SUMMARY_BATCH_TURNS,
+        ),
+        group_policy=_load_memory_policy(
+            max_turns_key="GROUP_CHAT_MEMORY_MAX_TURNS",
+            trigger_turns_key="GROUP_CHAT_MEMORY_SUMMARY_TRIGGER_TURNS",
+            batch_turns_key="GROUP_CHAT_MEMORY_SUMMARY_BATCH_TURNS",
+            default_max_turns=DEFAULT_GROUP_MAX_TURNS,
+            default_trigger_turns=DEFAULT_GROUP_SUMMARY_TRIGGER_TURNS,
+            default_batch_turns=DEFAULT_GROUP_SUMMARY_BATCH_TURNS,
+        ),
+    )
+
+
+def _load_memory_policy(
+    *,
+    max_turns_key: str,
+    trigger_turns_key: str,
+    batch_turns_key: str,
+    default_max_turns: int,
+    default_trigger_turns: int,
+    default_batch_turns: int,
+) -> MemoryPolicyConfig:
+    max_turns = _parse_positive_int(
+        os.getenv(max_turns_key, ""),
+        default_max_turns,
+        max_turns_key,
+    )
+    summary_trigger_turns = _parse_positive_int(
+        os.getenv(trigger_turns_key, ""),
+        default_trigger_turns,
+        trigger_turns_key,
+    )
+    summary_batch_turns = _parse_positive_int(
+        os.getenv(batch_turns_key, ""),
+        default_batch_turns,
+        batch_turns_key,
+    )
+
+    if summary_trigger_turns < max_turns:
+        raise ValueError(f"{trigger_turns_key} 不能小于 {max_turns_key}。")
+    if summary_batch_turns > summary_trigger_turns:
+        raise ValueError(f"{batch_turns_key} 不能大于 {trigger_turns_key}。")
+
+    return MemoryPolicyConfig(
+        max_turns=max_turns,
+        summary_trigger_turns=summary_trigger_turns,
+        summary_batch_turns=summary_batch_turns,
+    )
+
+
+def _parse_bool(raw_value: str) -> bool:
+    """解析布尔环境变量。"""
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _parse_positive_int(raw_value: str, default: int, key_name: str) -> int:
+    """解析正整数环境变量。"""
+    value = raw_value.strip()
+    if not value:
+        return default
+
+    parsed = int(value)
+    if parsed <= 0:
+        raise ValueError(f"{key_name} 必须是正整数。")
+    return parsed

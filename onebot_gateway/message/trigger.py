@@ -185,6 +185,7 @@ def _build_cached_event(
 ) -> ParsedMessageEvent:
     return ParsedMessageEvent(
         self_id=source_event.self_id,
+        time=source_event.time,
         user_id=cached.sender_user_id,
         message_id=cached.message_id,
         message_type=source_event.message_type,

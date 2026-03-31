@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -64,7 +65,7 @@ class ChatService:
             )
 
         session = self._get_session(event)
-        reply_text = session.ask(agent_input.text)
+        reply_text = session.ask(self._build_model_input(event, agent_input))
 
         if event.is_private_message():
             assert event.user_id is not None
@@ -101,7 +102,7 @@ class ChatService:
         session_key = self._build_session_key(event)
         session = self._sessions.get(session_key)
         if session is None:
-            session = ChatSession(self._config)
+            session = ChatSession(self._config, session_kind=session_key[0])
             self._sessions[session_key] = session
         return session
 
@@ -122,3 +123,50 @@ class ChatService:
         if not self._reply_with_quote:
             return None
         return event.message_id
+
+    def _build_model_input(
+        self,
+        event: ParsedMessageEvent,
+        agent_input: AgentInput,
+    ) -> str:
+        lines = [
+            "[当前消息]",
+            f"时间: {self._format_message_time(agent_input.time)}",
+        ]
+
+        if event.is_group_message():
+            lines.extend(
+                [
+                    "场景: 群聊",
+                    f"群号: {agent_input.group_id or ''}",
+                    f"群名: {agent_input.group_name or ''}",
+                    f"发送者显示名: {agent_input.sender_name}",
+                    f"发送者昵称: {event.sender.nickname}",
+                    f"群名片: {event.sender.card or '无'}",
+                    f"发送者ID: {agent_input.sender_id or ''}",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "场景: 私聊",
+                    f"发送者显示名: {agent_input.sender_name}",
+                    f"发送者昵称: {event.sender.nickname}",
+                    f"发送者ID: {agent_input.sender_id or ''}",
+                ]
+            )
+
+        lines.extend(
+            [
+                f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
+                "消息内容:",
+                agent_input.text,
+            ]
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_message_time(message_time: int | None) -> str:
+        if message_time is None:
+            return "未知"
+        return datetime.fromtimestamp(message_time).strftime("%Y-%m-%d %H:%M:%S")

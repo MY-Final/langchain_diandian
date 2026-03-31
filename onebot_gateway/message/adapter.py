@@ -18,6 +18,7 @@ class AgentInput:
     """传给 LangChain 等上层逻辑的统一输入。"""
 
     text: str
+    time: int | None
     sender_id: int | None
     sender_name: str
     chat_type: str
@@ -31,6 +32,7 @@ class AgentInput:
     def to_dict(self) -> dict[str, object]:
         return {
             "text": self.text,
+            "time": self.time,
             "sender_id": self.sender_id,
             "sender_name": self.sender_name,
             "chat_type": self.chat_type,
@@ -50,6 +52,7 @@ def build_agent_input(
     """把 OneBot 事件和触发结果压平成上层输入。"""
     return AgentInput(
         text=event.plain_text,
+        time=event.time,
         sender_id=event.user_id,
         sender_name=event.sender.display_name,
         chat_type=event.message_type,

@@ -35,6 +35,7 @@ class ParsedMessageEvent:
     """面向上层逻辑的消息事件。"""
 
     self_id: int | None
+    time: int | None
     user_id: int | None
     message_id: int | None
     message_type: str
@@ -87,6 +88,7 @@ class ParsedMessageEvent:
         """返回便于调试和后续接入智能体的结构。"""
         return {
             "text": self.plain_text,
+            "time": self.time,
             "is_at_self": self.is_at_self(),
             "sender_name": self.sender.display_name,
             "sender_user_id": self.user_id,
@@ -127,6 +129,7 @@ def parse_message_payload(
 
     return ParsedMessageEvent(
         self_id=_coalesce_int(payload.get("self_id"), self_id),
+        time=_to_int(payload.get("time")),
         user_id=_to_int(payload.get("user_id")),
         message_id=_to_int(payload.get("message_id")),
         message_type=_coalesce_str(payload.get("message_type"), message_type),

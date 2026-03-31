@@ -41,7 +41,24 @@ OPENAI_API_KEY=your-api-key
 OPENAI_BASE_URL=http://your-openai-compatible-host/v1
 OPENAI_MODEL=your-model
 SYSTEM_PROMPT_FILE=prompts/system_prompt.txt
+CHAT_MEMORY_ENABLE_SUMMARY=true
+PRIVATE_CHAT_MEMORY_MAX_TURNS=12
+PRIVATE_CHAT_MEMORY_SUMMARY_TRIGGER_TURNS=16
+PRIVATE_CHAT_MEMORY_SUMMARY_BATCH_TURNS=6
+GROUP_CHAT_MEMORY_MAX_TURNS=8
+GROUP_CHAT_MEMORY_SUMMARY_TRIGGER_TURNS=12
+GROUP_CHAT_MEMORY_SUMMARY_BATCH_TURNS=4
+CHAT_MEMORY_MAX_SUMMARY_CHARS=1200
+CHAT_MEMORY_MAX_INPUT_CHARS=12000
 ```
+
+记忆相关配置说明：
+
+- `CHAT_MEMORY_ENABLE_SUMMARY`：是否启用滚动摘要
+- `PRIVATE_CHAT_MEMORY_*`：私聊上下文窗口与摘要阈值
+- `GROUP_CHAT_MEMORY_*`：群聊上下文窗口与摘要阈值
+- `CHAT_MEMORY_MAX_SUMMARY_CHARS`：摘要最大字符数
+- `CHAT_MEMORY_MAX_INPUT_CHARS`：单次送入模型的上下文字符上限
 
 ### NapCat / OneBot 配置
 
@@ -80,7 +97,7 @@ python -m chat_app --message "你好"
 
 ### 2. 启动 OneBot WebSocket 接收
 
-用于连接 NapCat，并打印收到的原始事件、解析后的 JSON、触发判断，以及私聊场景下的 LangChain 回复：
+用于连接 NapCat，并打印收到的原始事件、解析后的 JSON、触发判断，以及私聊/群聊场景下的 LangChain 回复：
 
 ```bash
 python -m onebot_gateway
@@ -99,7 +116,16 @@ python -m onebot_gateway
 - 当前已支持判断：是否群聊、是否私聊、是否 @ bot、是否通过 bot 名称正则触发、是否回复了 bot 自己、是否回复了一条 @ bot 或点名 bot 的消息、是否应该进入后续处理
 - 当前已支持发送：群消息、私聊消息，发送内容使用 OneBot 消息段数组组织
 - 当前已支持私聊和群聊接入 LangChain，并自动引用原消息回复
+- 当前已支持私聊和群聊分开配置记忆窗口，超过阈值后对旧上下文做滚动摘要
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
+
+当前送入模型的群聊上下文会包含：
+
+- 消息时间
+- 发送者昵称
+- 群名片
+- 群号和群名
+- 当前消息文本
 
 当前群聊触发 LangChain 的条件：
 

@@ -18,7 +18,10 @@ async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
     message_store = MessageStore()
-    chat_service = ChatService.from_env(reply_with_quote=config.reply_with_quote)
+    chat_service = ChatService.from_env(
+        reply_with_quote=config.reply_with_quote,
+        reply_split_config=config.reply_split,
+    )
 
     async with OneBotWebSocketClient(config.ws_url, config.token) as client:
         trigger_evaluator = TriggerEvaluator(
@@ -82,6 +85,7 @@ async def main() -> None:
                     if chat_result.should_reply:
                         print("LangChain 回复:")
                         print(chat_result.reply_text)
+                        print(f"分段发送数量: {len(chat_result.reply_parts)}")
             except Exception as exc:
                 print(f"处理消息时出错: {exc}")
 

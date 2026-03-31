@@ -9,6 +9,17 @@ from chat_app.config import load_dotenv_file
 
 
 DEFAULT_NAPCAT_WS_URL = "ws://your-host:3001/"
+DEFAULT_REPLY_SPLIT_MARKER = "[SPLIT]"
+DEFAULT_REPLY_SPLIT_MAX_CHARS = 180
+
+
+@dataclass(frozen=True)
+class ReplySplitConfig:
+    """回复分段配置。"""
+
+    enabled: bool
+    max_chars: int
+    marker: str
 
 
 @dataclass(frozen=True)
@@ -19,6 +30,7 @@ class OneBotConfig:
     token: str
     bot_name_patterns: tuple[str, ...]
     reply_with_quote: bool
+    reply_split: ReplySplitConfig
 
 
 def load_onebot_config() -> OneBotConfig:
@@ -32,6 +44,18 @@ def load_onebot_config() -> OneBotConfig:
             os.getenv("ONEBOT_BOT_NAME_PATTERNS", "")
         ),
         reply_with_quote=_parse_bool(os.getenv("ONEBOT_REPLY_WITH_QUOTE", "true")),
+        reply_split=ReplySplitConfig(
+            enabled=_parse_bool(os.getenv("ONEBOT_REPLY_SPLIT_ENABLED", "true")),
+            max_chars=_parse_positive_int(
+                os.getenv("ONEBOT_REPLY_SPLIT_MAX_CHARS", ""),
+                DEFAULT_REPLY_SPLIT_MAX_CHARS,
+                "ONEBOT_REPLY_SPLIT_MAX_CHARS",
+            ),
+            marker=os.getenv(
+                "ONEBOT_REPLY_SPLIT_MARKER", DEFAULT_REPLY_SPLIT_MARKER
+            ).strip()
+            or DEFAULT_REPLY_SPLIT_MARKER,
+        ),
     )
 
 
@@ -44,3 +68,15 @@ def _parse_name_patterns(raw_value: str) -> tuple[str, ...]:
 def _parse_bool(raw_value: str) -> bool:
     """解析布尔环境变量。"""
     return raw_value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _parse_positive_int(raw_value: str, default: int, key_name: str) -> int:
+    """解析正整数环境变量。"""
+    value = raw_value.strip()
+    if not value:
+        return default
+
+    parsed = int(value)
+    if parsed <= 0:
+        raise ValueError(f"{key_name} 必须是正整数。")
+    return parsed

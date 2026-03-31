@@ -20,6 +20,9 @@ class LoadOneBotConfigTests(unittest.TestCase):
                 "NAPCAT_TOKEN": "test-token",
                 "ONEBOT_BOT_NAME_PATTERNS": "点点,bot",
                 "ONEBOT_REPLY_WITH_QUOTE": "false",
+                "ONEBOT_REPLY_SPLIT_ENABLED": "true",
+                "ONEBOT_REPLY_SPLIT_MAX_CHARS": "120",
+                "ONEBOT_REPLY_SPLIT_MARKER": "[CUT]",
             },
             clear=True,
         ):
@@ -30,6 +33,9 @@ class LoadOneBotConfigTests(unittest.TestCase):
         self.assertEqual(config.token, "test-token")
         self.assertEqual(config.bot_name_patterns, ("点点", "bot"))
         self.assertFalse(config.reply_with_quote)
+        self.assertTrue(config.reply_split.enabled)
+        self.assertEqual(config.reply_split.max_chars, 120)
+        self.assertEqual(config.reply_split.marker, "[CUT]")
 
     def test_uses_default_values_when_environment_missing(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -40,6 +46,7 @@ class LoadOneBotConfigTests(unittest.TestCase):
         self.assertEqual(config.token, "")
         self.assertEqual(config.bot_name_patterns, ())
         self.assertTrue(config.reply_with_quote)
+        self.assertTrue(config.reply_split.enabled)
 
 
 if __name__ == "__main__":

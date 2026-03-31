@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from chat_app.config import AppConfig
 from onebot_gateway.app.service import ChatService
+from onebot_gateway.config import ReplySplitConfig
 from onebot_gateway.message.parser import parse_message_event
 from onebot_gateway.message.trigger import TriggerEvaluator
 
@@ -42,6 +43,15 @@ class FakeChatSession:
         self.questions.append(user_input)
         FakeChatSession.last_question = user_input
         return f"回声:{_extract_message_body(user_input)}"
+
+
+class FakeSplitChatSession(FakeChatSession):
+    """返回可显式分段的回复。"""
+
+    def ask(self, user_input: str) -> str:
+        self.questions.append(user_input)
+        FakeChatSession.last_question = user_input
+        return "第一段[SPLIT]第二段"
 
 
 def _extract_message_body(user_input: str) -> str:
@@ -339,6 +349,54 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [segment.to_dict() for segment in sender.group_calls[0][1]],
             [{"type": "text", "data": {"text": "回声:点点 你好"}}],
+        )
+
+    async def test_sends_multi_part_reply_when_model_uses_split_marker(self) -> None:
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30008,
+                "message_type": "private",
+                "sender": {"nickname": "用户A", "card": "", "role": "friend"},
+                "message": [{"type": "text", "data": {"text": "长一点回答"}}],
+                "raw_message": "长一点回答",
+                "post_type": "message",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator((r"点点",)).evaluate(event)
+        sender = FakeSender()
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("onebot_gateway.app.service.ChatSession", FakeSplitChatSession):
+            service = ChatService(
+                config,
+                reply_split_config=ReplySplitConfig(
+                    enabled=True,
+                    max_chars=50,
+                    marker="[SPLIT]",
+                ),
+            )
+            result = await service.handle_event(sender, event, decision)
+
+        self.assertEqual(result.reply_parts, ("第一段", "第二段"))
+        self.assertEqual(len(sender.private_calls), 2)
+        self.assertEqual(
+            [segment.to_dict() for segment in sender.private_calls[0][1]],
+            [
+                {"type": "reply", "data": {"id": "30008"}},
+                {"type": "text", "data": {"text": "第一段"}},
+            ],
+        )
+        self.assertEqual(
+            [segment.to_dict() for segment in sender.private_calls[1][1]],
+            [{"type": "text", "data": {"text": "第二段"}}],
         )
 
 

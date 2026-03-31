@@ -5,41 +5,68 @@ from __future__ import annotations
 import asyncio
 import json
 
-import websockets
-
+from onebot_gateway.client import OneBotWebSocketClient
 from onebot_gateway.config import load_onebot_config
+from onebot_gateway.event_parser import parse_message_event
+from onebot_gateway.message_store import MessageStore
+from onebot_gateway.trigger import TriggerEvaluator
 
 
 async def main() -> None:
     """连接 NapCat 并持续打印收到的事件。"""
     config = load_onebot_config()
+    message_store = MessageStore()
+    trigger_evaluator = TriggerEvaluator(
+        config.bot_name_patterns,
+        message_store=message_store,
+    )
 
-    headers: dict[str, str] = {}
-    if config.token:
-        headers["Authorization"] = f"Bearer {config.token}"
-
-    async with websockets.connect(
-        config.ws_url,
-        additional_headers=headers if headers else None,
-        ping_interval=20,
-        ping_timeout=20,
-    ) as ws:
+    async with OneBotWebSocketClient(config.ws_url, config.token) as client:
+        trigger_evaluator = TriggerEvaluator(
+            config.bot_name_patterns,
+            message_store=message_store,
+            resolver=client,
+        )
         print("已连接到 NapCat:", config.ws_url)
 
         while True:
-            raw = await ws.recv()
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8", errors="ignore")
+            frame = await client.receive_frame()
+            raw = frame.raw
 
             print("收到原始数据:")
             print(raw)
 
+            if frame.data is None:
+                print("不是 JSON")
+                continue
+
             try:
-                data = json.loads(raw)
+                data = frame.data
                 print("解析后的 JSON:")
                 print(json.dumps(data, ensure_ascii=False, indent=2))
-            except Exception:
-                print("不是 JSON")
+
+                event = parse_message_event(data)
+                if event is not None:
+                    print("提取后的消息信息:")
+                    print(
+                        json.dumps(
+                            event.to_summary(config.bot_name_patterns),
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+
+                    decision = await trigger_evaluator.evaluate(event)
+                    print("触发判断:")
+                    print(
+                        json.dumps(
+                            decision.to_dict(),
+                            ensure_ascii=False,
+                            indent=2,
+                        )
+                    )
+            except Exception as exc:
+                print(f"处理消息时出错: {exc}")
 
 
 def run() -> None:

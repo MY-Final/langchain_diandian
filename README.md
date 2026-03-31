@@ -41,7 +41,10 @@ SYSTEM_PROMPT_FILE=prompts/system_prompt.txt
 ```env
 NAPCAT_WS_URL=ws://your-host:3001/
 NAPCAT_TOKEN=
+ONEBOT_BOT_NAME_PATTERNS=点点,bot
 ```
+
+`ONEBOT_BOT_NAME_PATTERNS` 支持用英文逗号分隔多个正则，用于识别群消息里是否在直接叫 bot。
 
 ## 启动方式
 
@@ -67,7 +70,7 @@ python -m chat_app --message "你好"
 
 ### 2. 启动 OneBot WebSocket 接收
 
-用于连接 NapCat，并打印收到的原始事件和解析后的 JSON：
+用于连接 NapCat，并打印收到的原始事件、解析后的 JSON，以及提取后的消息信息：
 
 ```bash
 python -m onebot_gateway
@@ -81,7 +84,9 @@ python -m onebot_gateway
 
 ## 当前状态
 
-- `onebot_gateway` 当前只负责连接 NapCat 并打印消息
+- `onebot_gateway` 当前会解析 OneBot 消息事件，并提取适合后续智能体使用的字段
+- 当前已支持提取：文本内容、发送人、群号、私聊/群聊类型、是否 @ 自己、是否回复消息
+- 当前已支持判断：是否群聊、是否私聊、是否 @ bot、是否通过 bot 名称正则触发、是否回复了 bot 自己、是否回复了一条 @ bot 或点名 bot 的消息、是否应该进入后续处理
 - 这一阶段还没有把 OneBot 消息转给 LangChain
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
 

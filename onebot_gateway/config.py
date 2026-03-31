@@ -17,6 +17,7 @@ class OneBotConfig:
 
     ws_url: str
     token: str
+    bot_name_patterns: tuple[str, ...]
 
 
 def load_onebot_config() -> OneBotConfig:
@@ -26,4 +27,13 @@ def load_onebot_config() -> OneBotConfig:
     return OneBotConfig(
         ws_url=os.getenv("NAPCAT_WS_URL", DEFAULT_NAPCAT_WS_URL).strip(),
         token=os.getenv("NAPCAT_TOKEN", "").strip(),
+        bot_name_patterns=_parse_name_patterns(
+            os.getenv("ONEBOT_BOT_NAME_PATTERNS", "")
+        ),
     )
+
+
+def _parse_name_patterns(raw_value: str) -> tuple[str, ...]:
+    """支持使用英文逗号分隔多个 bot 名称正则。"""
+    parts = [item.strip() for item in raw_value.split(",")]
+    return tuple(item for item in parts if item)

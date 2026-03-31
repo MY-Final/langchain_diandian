@@ -18,6 +18,7 @@ class LoadOneBotConfigTests(unittest.TestCase):
             {
                 "NAPCAT_WS_URL": "ws://127.0.0.1:3001/",
                 "NAPCAT_TOKEN": "test-token",
+                "ONEBOT_BOT_NAME_PATTERNS": "点点,bot",
             },
             clear=True,
         ):
@@ -26,6 +27,7 @@ class LoadOneBotConfigTests(unittest.TestCase):
 
         self.assertEqual(config.ws_url, "ws://127.0.0.1:3001/")
         self.assertEqual(config.token, "test-token")
+        self.assertEqual(config.bot_name_patterns, ("点点", "bot"))
 
     def test_uses_default_values_when_environment_missing(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -34,6 +36,7 @@ class LoadOneBotConfigTests(unittest.TestCase):
 
         self.assertEqual(config.ws_url, DEFAULT_NAPCAT_WS_URL)
         self.assertEqual(config.token, "")
+        self.assertEqual(config.bot_name_patterns, ())
 
 
 if __name__ == "__main__":

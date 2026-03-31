@@ -22,10 +22,10 @@
 
 新增一个 action，通常只需要改这几个地方：
 
-- `chat_app/actions/types.py`
-  这里定义待执行 action 的数据结构。
-- `chat_app/actions/*.py`
-  这里定义 LangChain tool。
+- `chat_app/actions/<category>/types.py`
+  这里定义某一类 action 的待执行数据结构。
+- `chat_app/actions/<category>/tools.py`
+  这里定义某一类 action 的 LangChain tool。
 - `chat_app/tools/registry.py`
   在这里注册 tool。
 - `chat_app/chat.py`
@@ -43,7 +43,20 @@
 
 以“设置管理员”为例，建议按下面 6 步做。
 
-### 1. 在 `types.py` 增加 PendingAction 类型
+### 1. 先决定 action 分类目录
+
+当前建议按业务分类放子目录，例如：
+
+- `chat_app/actions/group_management/`
+- `chat_app/actions/friend_management/`
+- `chat_app/actions/profile/`
+
+像禁言、设置管理员、踢人，都应该继续放在：
+
+- `chat_app/actions/group_management/types.py`
+- `chat_app/actions/group_management/tools.py`
+
+### 2. 在分类目录的 `types.py` 增加 PendingAction 类型
 
 参考现有的 `PendingMuteAction`，新增一个数据类：
 
@@ -68,13 +81,7 @@ class PendingSetGroupAdminAction:
 - `action` 字段必须稳定，后面靠它分发执行逻辑。
 - 字段只保留执行所需的最小集合，不要塞多余上下文。
 
-### 2. 新增 tool 文件
-
-建议继续放在 `chat_app/actions/moderation.py`，如果动作越来越多，再拆成：
-
-- `moderation.py`
-- `group_admin.py`
-- `group_title.py`
+### 3. 在分类目录的 `tools.py` 新增 tool
 
 例如：
 
@@ -101,7 +108,7 @@ def set_group_admin(user_id: int, group_id: int, enable: bool = True) -> str:
 - tool 不直接碰 OneBot 客户端。
 - 返回值统一用 JSON 字符串，和现在的 mute 保持一致。
 
-### 3. 在 `registry.py` 注册 tool
+### 4. 在 `registry.py` 注册 tool
 
 例如：
 
@@ -112,7 +119,7 @@ tools.append(mute_group_member)
 tools.append(set_group_admin)
 ```
 
-### 4. 在 `chat.py` 解析 tool 输出
+### 5. 在 `chat.py` 解析 tool 输出
 
 当前 `ChatSession` 里已经有 `_try_parse_mute_action()`。
 新增 action 时，按同样模式再加一个解析函数，或者把它改成通用分发。
@@ -147,7 +154,7 @@ def _try_parse_set_group_admin_action(self, tool_name: str, tool_output: str) ->
 
 统一按 `action` 字段分发。
 
-### 5. 在 OneBot 客户端补 API 封装
+### 6. 在 OneBot 客户端补 API 封装
 
 如果 NapCat / OneBot 有对应接口，就在 `onebot_gateway/transport/client.py` 增加方法。
 
@@ -169,7 +176,7 @@ async def set_group_admin(
 
 是否真叫 `set_group_admin`，要以 `docs/napcat.md` 为准。
 
-### 6. 在 `ChatService` 中真正执行
+### 7. 在 `ChatService` 中真正执行
 
 这是最关键的一层。
 
@@ -252,8 +259,8 @@ async def _execute_set_group_admin(
 
 如果你现在就要加这个 action，最少会改这些文件：
 
-1. `chat_app/actions/types.py`
-2. `chat_app/actions/moderation.py`
+1. `chat_app/actions/group_management/types.py`
+2. `chat_app/actions/group_management/tools.py`
 3. `chat_app/tools/registry.py`
 4. `chat_app/chat.py`
 5. `onebot_gateway/transport/client.py`
@@ -337,13 +344,7 @@ async def _execute_xxx_action(...) -> ActionResult:
 
 这对于 1 到 2 个 action 很够用，也最直接。
 
-如果后面 action 增长到 3 个以上，建议做一个小重构：
-
-- 在 `types.py` 里定义多个 `Pending*Action`
-- 在 `chat.py` 里统一做 `_try_parse_action()` 分发
-- 在 `service.py` 里统一按 `action.action` 分发执行
-
-这样后面新增 action 会更快。
+现在已经按分类目录组织 action；后面新增时，优先先判断应该归到哪个分类目录，再按相同模式扩展。
 
 ---
 

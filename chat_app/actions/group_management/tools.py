@@ -1,4 +1,4 @@
-"""群禁言工具。"""
+"""群管理工具。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 
 from langchain_core.tools import tool
 
-from chat_app.actions.types import (
+from chat_app.actions.group_management.types import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
     PendingMuteAction,

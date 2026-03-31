@@ -7,7 +7,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
-from chat_app.actions.types import (
+from chat_app.actions.group_management import (
     PendingAction,
     PendingMuteAction,
     PendingSetGroupAdminAction,

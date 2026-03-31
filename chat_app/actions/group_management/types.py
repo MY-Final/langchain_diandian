@@ -1,4 +1,4 @@
-"""动作数据类型。"""
+"""群管理动作数据类型。"""
 
 from __future__ import annotations
 

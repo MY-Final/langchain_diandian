@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import unittest
-from chat_app.actions.moderation import mute_group_member, set_group_admin
-from chat_app.actions.types import (
+from chat_app.actions.group_management import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
     PendingMuteAction,
     PendingSetGroupAdminAction,
+    mute_group_member,
+    set_group_admin,
 )
 from chat_app.config import AppConfig
 from onebot_gateway.app.service import ChatService, _can_operate
@@ -194,7 +195,7 @@ class FakeMuteChatSessionWithAction(FakeMuteChatSession):
     """返回带有待执行禁言动作的会话。"""
 
     def ask(self, user_input: str) -> str:
-        from chat_app.actions.types import PendingMuteAction
+        from chat_app.actions.group_management import PendingMuteAction
 
         self._pending = (PendingMuteAction(group_id=100, user_id=200, duration=600),)
         return "已经禁言了该用户"

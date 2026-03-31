@@ -9,7 +9,7 @@ from typing import Any, Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
-from chat_app.actions.types import (
+from chat_app.actions.group_management import (
     PendingAction,
     PendingMuteAction,
     PendingSetGroupAdminAction,

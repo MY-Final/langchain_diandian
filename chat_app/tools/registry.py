@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from langchain_core.tools import BaseTool
 
-from chat_app.actions.moderation import mute_group_member, set_group_admin
+from chat_app.actions.group_management import mute_group_member, set_group_admin
 from chat_app.emoji.index import DEFAULT_EMOJI_RECORDS_PATH
 from chat_app.tools.emoji_tool import search_qq_emojis
 

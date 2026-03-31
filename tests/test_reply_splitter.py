@@ -21,7 +21,7 @@ class ReplySplitterTests(unittest.TestCase):
             ["第一段", "第二段", "第三段"],
         )
 
-    def test_splits_long_text_by_sentence(self) -> None:
+    def test_only_hard_splits_when_no_marker(self) -> None:
         splitter = ReplySplitter(
             ReplySplitConfig(enabled=True, max_chars=8, marker="[SPLIT]")
         )

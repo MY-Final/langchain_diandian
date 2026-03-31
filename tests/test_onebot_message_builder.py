@@ -7,11 +7,17 @@ import unittest
 from onebot_gateway.message.builder import (
     OutgoingMessageSegment,
     at_segment,
+    contact_segment,
     custom_segment,
+    face_segment,
     ensure_segments,
     image_segment,
+    markdown_segment,
+    poke_segment,
+    record_segment,
     reply_segment,
     text_segment,
+    video_segment,
 )
 
 
@@ -31,6 +37,29 @@ class MessageBuilderTests(unittest.TestCase):
         self.assertEqual(
             image_segment("https://example.com/a.png").to_dict(),
             {"type": "image", "data": {"file": "https://example.com/a.png"}},
+        )
+        self.assertEqual(
+            face_segment(14).to_dict(), {"type": "face", "data": {"id": "14"}}
+        )
+        self.assertEqual(
+            markdown_segment("# hi").to_dict(),
+            {"type": "markdown", "data": {"content": "# hi"}},
+        )
+        self.assertEqual(
+            record_segment("voice.mp3").to_dict(),
+            {"type": "record", "data": {"file": "voice.mp3"}},
+        )
+        self.assertEqual(
+            video_segment("demo.mp4").to_dict(),
+            {"type": "video", "data": {"file": "demo.mp4"}},
+        )
+        self.assertEqual(
+            contact_segment("qq", 123).to_dict(),
+            {"type": "contact", "data": {"type": "qq", "id": "123"}},
+        )
+        self.assertEqual(
+            poke_segment("qq", 123).to_dict(),
+            {"type": "poke", "data": {"type": "qq", "id": "123"}},
         )
 
     def test_supports_custom_segment(self) -> None:

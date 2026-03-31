@@ -54,6 +54,15 @@ class FakeSplitChatSession(FakeChatSession):
         return "第一段[SPLIT]第二段"
 
 
+class FakeAtChatSession(FakeChatSession):
+    """返回带艾特标签的回复。"""
+
+    def ask(self, user_input: str) -> str:
+        self.questions.append(user_input)
+        FakeChatSession.last_question = user_input
+        return '你好 <at qq="123456" /> 请看这里'
+
+
 def _extract_message_body(user_input: str) -> str:
     marker = "消息内容:\n"
     if marker not in user_input:
@@ -397,6 +406,50 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [segment.to_dict() for segment in sender.private_calls[1][1]],
             [{"type": "text", "data": {"text": "第二段"}}],
+        )
+
+    async def test_sends_at_segment_when_model_requests_mention(self) -> None:
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30009,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "text", "data": {"text": "点点 帮我艾特一下这个人 "}},
+                    {"type": "at", "data": {"qq": "123456"}},
+                ],
+                "raw_message": "点点 帮我艾特一下这个人[CQ:at,qq=123456]",
+                "post_type": "message",
+                "group_id": 123,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator((r"点点",)).evaluate(event)
+        sender = FakeSender()
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("onebot_gateway.app.service.ChatSession", FakeAtChatSession):
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+
+        self.assertTrue(result.should_reply)
+        self.assertEqual(len(sender.group_calls), 1)
+        self.assertEqual(
+            [segment.to_dict() for segment in sender.group_calls[0][1]],
+            [
+                {"type": "reply", "data": {"id": "30009"}},
+                {"type": "text", "data": {"text": "你好 "}},
+                {"type": "at", "data": {"qq": "123456"}},
+                {"type": "text", "data": {"text": " 请看这里"}},
+            ],
         )
 
 

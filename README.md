@@ -76,9 +76,9 @@ ONEBOT_REPLY_SPLIT_MARKER=[SPLIT]
 
 `ONEBOT_REPLY_WITH_QUOTE` 控制回复时是否自动引用原消息，默认 `true`。
 
-`ONEBOT_REPLY_SPLIT_ENABLED` 控制是否启用自动分段回复。
+`ONEBOT_REPLY_SPLIT_ENABLED` 控制是否启用分段回复；默认尽量单条发送。
 
-`ONEBOT_REPLY_SPLIT_MAX_CHARS` 控制单条回复最大字符数，超过后会继续拆分。
+`ONEBOT_REPLY_SPLIT_MAX_CHARS` 控制单条回复最大字符数；只有超长时才会安全切分。
 
 `ONEBOT_REPLY_SPLIT_MARKER` 是显式分段标记；如果模型输出里带这个标记，系统会优先按它拆成多条消息发送。
 
@@ -126,7 +126,8 @@ python -m onebot_gateway
 - 当前已支持发送：群消息、私聊消息，发送内容使用 OneBot 消息段数组组织
 - 当前已支持私聊和群聊接入 LangChain，并自动引用原消息回复
 - 当前已支持私聊和群聊分开配置记忆窗口，超过阈值后对旧上下文做滚动摘要
-- 当前已支持 LangChain 回复自动分段，第一段可选引用原消息，后续段落顺序发送
+- 当前已支持 LangChain 回复分段，默认尽量单条发送；只有显式 `[SPLIT]` 或超长时才拆分，第一段可选引用原消息
+- 当前已支持 LangChain 通过标签语法发送混合消息，例如 @、图片、表情等
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
 
 当前送入模型的群聊上下文会包含：
@@ -190,6 +191,32 @@ await client.send_group_message(
 - `build_text_reply(text, reply_message_id=None)`：把上层回复文本转成 OneBot 消息段
 
 后面接 LangChain 时，建议只在边界层接触 OneBot 原始结构，业务层尽量只使用 adapter 产出的对象。
+
+## 富消息回复
+
+LangChain 回复现在支持使用标签语法生成 OneBot 混合消息，不需要使用 CQ 码。
+
+示例：
+
+```text
+你好 <at qq="123456" /> 请看这里
+```
+
+当前支持的标签：
+
+- `@`：`<at qq="123456" />`
+- 图片：`<image file="https://example.com/a.png" />`
+- QQ 表情：`<face id="14" />`
+- 语音：`<record file="voice.mp3" />`
+- 视频：`<video file="demo.mp4" />`
+- markdown：`<markdown># 标题</markdown>`
+- 联系人：`<contact type="qq" id="123456" />`
+- 戳一戳：`<poke type="qq" id="123456" />`
+
+注意：
+
+- 如果模型不知道目标用户 ID、文件地址等必要参数，不应该编造标签
+- 当前消息中如果已经 @ 了某人，系统会把这些用户 ID 一起带给模型，方便模型继续艾特对方
 
 ## 测试
 

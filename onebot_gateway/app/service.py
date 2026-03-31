@@ -12,9 +12,9 @@ from onebot_gateway.config import ReplySplitConfig
 from onebot_gateway.message.adapter import (
     AgentInput,
     build_agent_input,
-    build_text_reply,
 )
 from onebot_gateway.message.parser import ParsedMessageEvent
+from onebot_gateway.message.rich_reply import build_rich_text_reply
 from onebot_gateway.message.reply_splitter import ReplySplitter
 from onebot_gateway.message.trigger import TriggerDecision
 
@@ -140,7 +140,7 @@ class ChatService:
             quoted_message_id = reply_message_id if index == 0 else None
             await send(
                 target_id,
-                build_text_reply(part, reply_message_id=quoted_message_id),
+                build_rich_text_reply(part, reply_message_id=quoted_message_id),
             )
 
     def _get_session(self, event: ParsedMessageEvent) -> ChatSession:
@@ -205,9 +205,15 @@ class ChatService:
             [
                 "回复规则:",
                 "- 直接回复用户，不要重复上述元信息。",
-                "- 如果回复较长，请自然分段。",
-                f"- 如需明确拆成多条消息，可在段落之间插入 {self._reply_splitter_marker()} 标记。",
+                "- 默认尽量只回复一条消息，不要为了排版把内容拆成很多条。",
+                f"- 只有你明确希望拆成多条消息时，才在段落之间插入 {self._reply_splitter_marker()} 标记。",
+                "- 不要使用 CQ 码。",
+                '- 如需在群里艾特某人，请使用 XML 标签格式，例如 <at qq="123456" />。',
+                '- 如果需要发图片，可使用 <image file="https://example.com/a.png" />。',
+                '- 如果需要发 QQ 表情，可使用 <face id="14" />。',
+                "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
+                f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "消息内容:",
                 agent_input.text,
             ]

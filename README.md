@@ -49,9 +49,12 @@ SYSTEM_PROMPT_FILE=prompts/system_prompt.txt
 NAPCAT_WS_URL=ws://your-host:3001/
 NAPCAT_TOKEN=
 ONEBOT_BOT_NAME_PATTERNS=点点,bot
+ONEBOT_REPLY_WITH_QUOTE=true
 ```
 
 `ONEBOT_BOT_NAME_PATTERNS` 支持用英文逗号分隔多个正则，用于识别群消息里是否在直接叫 bot。
+
+`ONEBOT_REPLY_WITH_QUOTE` 控制回复时是否自动引用原消息，默认 `true`。
 
 ## 启动方式
 
@@ -95,8 +98,14 @@ python -m onebot_gateway
 - 当前已支持提取：文本内容、发送人、群号、私聊/群聊类型、是否 @ 自己、是否回复消息
 - 当前已支持判断：是否群聊、是否私聊、是否 @ bot、是否通过 bot 名称正则触发、是否回复了 bot 自己、是否回复了一条 @ bot 或点名 bot 的消息、是否应该进入后续处理
 - 当前已支持发送：群消息、私聊消息，发送内容使用 OneBot 消息段数组组织
-- 当前已支持私聊消息接入 LangChain，并自动引用原消息回复
+- 当前已支持私聊和群聊接入 LangChain，并自动引用原消息回复
 - 后续可以在此基础上继续接消息过滤、消息发送和 LangChain 集成
+
+当前群聊触发 LangChain 的条件：
+
+- `@ bot`
+- 回复 bot 发出的消息
+- 文本命中 `ONEBOT_BOT_NAME_PATTERNS` 中配置的 bot 名称正则
 
 ## 消息发送
 

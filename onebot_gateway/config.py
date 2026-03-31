@@ -18,6 +18,7 @@ class OneBotConfig:
     ws_url: str
     token: str
     bot_name_patterns: tuple[str, ...]
+    reply_with_quote: bool
 
 
 def load_onebot_config() -> OneBotConfig:
@@ -30,6 +31,7 @@ def load_onebot_config() -> OneBotConfig:
         bot_name_patterns=_parse_name_patterns(
             os.getenv("ONEBOT_BOT_NAME_PATTERNS", "")
         ),
+        reply_with_quote=_parse_bool(os.getenv("ONEBOT_REPLY_WITH_QUOTE", "true")),
     )
 
 
@@ -37,3 +39,8 @@ def _parse_name_patterns(raw_value: str) -> tuple[str, ...]:
     """支持使用英文逗号分隔多个 bot 名称正则。"""
     parts = [item.strip() for item in raw_value.split(",")]
     return tuple(item for item in parts if item)
+
+
+def _parse_bool(raw_value: str) -> bool:
+    """解析布尔环境变量。"""
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}

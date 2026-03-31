@@ -16,66 +16,109 @@ from onebot_gateway.message.parser import ParsedMessageEvent
 from onebot_gateway.message.trigger import TriggerDecision
 
 
-class PrivateMessageSender(Protocol):
-    """发送私聊消息的协议。"""
+class ChatMessageSender(Protocol):
+    """发送 OneBot 消息的协议。"""
 
     async def send_private_message(self, user_id: int | str, message: object) -> object:
         """发送私聊消息。"""
 
+    async def send_group_message(self, group_id: int | str, message: object) -> object:
+        """发送群聊消息。"""
+
 
 @dataclass
-class PrivateChatResult:
-    """私聊处理结果。"""
+class ChatHandleResult:
+    """消息处理结果。"""
 
     should_reply: bool
     reply_text: str
     agent_input: AgentInput
 
 
-class PrivateChatService:
-    """处理私聊消息并调用 LangChain 回复。"""
+class ChatService:
+    """处理 OneBot 消息并调用 LangChain 回复。"""
 
-    def __init__(self, config: AppConfig) -> None:
+    def __init__(self, config: AppConfig, *, reply_with_quote: bool = True) -> None:
         self._config = config
-        self._sessions: dict[int, ChatSession] = {}
+        self._reply_with_quote = reply_with_quote
+        self._sessions: dict[tuple[str, int], ChatSession] = {}
 
     @classmethod
-    def from_env(cls) -> PrivateChatService:
+    def from_env(cls, *, reply_with_quote: bool = True) -> ChatService:
         """从环境变量加载 LangChain 配置。"""
-        return cls(load_config())
+        return cls(load_config(), reply_with_quote=reply_with_quote)
 
     async def handle_event(
         self,
-        sender: PrivateMessageSender,
+        sender: ChatMessageSender,
         event: ParsedMessageEvent,
         decision: TriggerDecision,
-    ) -> PrivateChatResult:
-        """处理私聊消息并在需要时回消息。"""
+    ) -> ChatHandleResult:
+        """处理消息并在需要时回消息。"""
         agent_input = build_agent_input(event, decision)
-        if not event.is_private_message() or not decision.should_process:
-            return PrivateChatResult(
+        if not decision.should_process:
+            return ChatHandleResult(
                 should_reply=False,
                 reply_text="",
                 agent_input=agent_input,
             )
 
-        if event.user_id is None:
-            raise ValueError("私聊消息缺少发送人 user_id。")
+        session = self._get_session(event)
+        reply_text = session.ask(agent_input.text)
 
-        reply_text = self._get_session(event.user_id).ask(agent_input.text)
-        await sender.send_private_message(
-            event.user_id,
-            build_text_reply(reply_text, reply_message_id=event.message_id),
-        )
-        return PrivateChatResult(
+        if event.is_private_message():
+            assert event.user_id is not None
+            await sender.send_private_message(
+                event.user_id,
+                build_text_reply(
+                    reply_text,
+                    reply_message_id=self._get_reply_message_id(event),
+                ),
+            )
+        elif event.is_group_message():
+            assert event.group_id is not None
+            await sender.send_group_message(
+                event.group_id,
+                build_text_reply(
+                    reply_text,
+                    reply_message_id=self._get_reply_message_id(event),
+                ),
+            )
+        else:
+            return ChatHandleResult(
+                should_reply=False,
+                reply_text="",
+                agent_input=agent_input,
+            )
+
+        return ChatHandleResult(
             should_reply=True,
             reply_text=reply_text,
             agent_input=agent_input,
         )
 
-    def _get_session(self, user_id: int) -> ChatSession:
-        session = self._sessions.get(user_id)
+    def _get_session(self, event: ParsedMessageEvent) -> ChatSession:
+        session_key = self._build_session_key(event)
+        session = self._sessions.get(session_key)
         if session is None:
             session = ChatSession(self._config)
-            self._sessions[user_id] = session
+            self._sessions[session_key] = session
         return session
+
+    def _build_session_key(self, event: ParsedMessageEvent) -> tuple[str, int]:
+        if event.is_private_message():
+            if event.user_id is None:
+                raise ValueError("私聊消息缺少发送人 user_id。")
+            return ("private", event.user_id)
+
+        if event.is_group_message():
+            if event.group_id is None:
+                raise ValueError("群聊消息缺少 group_id。")
+            return ("group", event.group_id)
+
+        raise ValueError(f"暂不支持的消息类型：{event.message_type}")
+
+    def _get_reply_message_id(self, event: ParsedMessageEvent) -> int | None:
+        if not self._reply_with_quote:
+            return None
+        return event.message_id

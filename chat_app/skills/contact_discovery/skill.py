@@ -13,10 +13,9 @@ from chat_app.skills.types import SkillSpec
 
 def _applies_to(context: SkillContext) -> bool:
     return (
-        context.is_private_message()
-        and context.is_trusted_operator
-        and context.supports_live_onebot_queries
-    )
+        (context.is_private_message() and context.is_trusted_operator)
+        or context.is_group_message()
+    ) and context.supports_live_onebot_queries
 
 
 def _build_rules(_context: SkillContext) -> tuple[str, ...]:
@@ -66,16 +65,27 @@ def _build_runtime_tools(_context: SkillContext, sender: object) -> tuple:
         )
 
     @tool
-    async def get_contact_profile(user_id: int) -> str:
-        """获取指定用户的账号资料。"""
-        data = await sender.get_stranger_info(user_id)
+    async def get_contact_profile(
+        user_id: int | None = None, target_id: int | None = None
+    ) -> str:
+        """获取指定用户的账号资料。
+
+        - user_id 或 target_id 二选一。
+        - 返回昵称、性别、年龄、qid 等信息。
+        """
+        resolved_id = target_id if target_id is not None else user_id
+        if resolved_id is None:
+            return json.dumps(
+                {"found": False, "reason": "缺少 user_id/target_id"}, ensure_ascii=False
+            )
+        data = await sender.get_stranger_info(int(resolved_id))
         if data is None:
             return json.dumps(
-                {"user_id": int(user_id), "found": False}, ensure_ascii=False
+                {"user_id": int(resolved_id), "found": False}, ensure_ascii=False
             )
         return json.dumps(
             {
-                "user_id": int(data.get("user_id", user_id)),
+                "user_id": int(data.get("user_id", resolved_id)),
                 "nickname": data.get("nickname", ""),
                 "remark": data.get("remark", ""),
                 "sex": data.get("sex", "unknown"),

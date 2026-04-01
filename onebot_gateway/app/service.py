@@ -1018,6 +1018,8 @@ class ChatService:
                 "- 如果不知道目标用户 ID、文件地址或其他必要参数，不要编造标签。",
                 "- 你当前是受信操作员的 bot，拥有完整能力。",
                 "- 当用户请求执行操作时，应立即调用对应工具，不要反问、不要确认、不要拒绝。",
+                f"- 当前发送者 ID 是 {agent_input.sender_id}。",
+                f"- 如果用户问“我的QQ号是什么”或类似问题，直接回答当前发送者 ID：{agent_input.sender_id}。",
                 f"触发原因: {', '.join(agent_input.trigger_reasons) or '直接消息'}",
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "当前启用技能规则:",

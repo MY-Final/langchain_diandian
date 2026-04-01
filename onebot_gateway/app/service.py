@@ -55,6 +55,8 @@ from chat_app.skills.file_send import (
 from chat_app.skills.forward_message import PendingSendForwardMessageAction
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
+from chat_app.memory.long_term import LongTermMemoryStore
+from chat_app.postgres.long_term_store import PostgresLongTermStore
 from chat_app.skills.context import SkillContext
 from chat_app.skills.registry import resolve_skill_runtime
 from onebot_gateway.config import ReplySplitConfig
@@ -309,6 +311,9 @@ class ChatService:
         self._reply_with_quote = reply_with_quote
         self._reply_splitter = ReplySplitter(reply_split_config)
         self._sessions: dict[tuple[str, int], ChatSession] = {}
+        self._long_term_store: LongTermMemoryStore | None = (
+            self._build_long_term_store()
+        )
 
     @classmethod
     def from_env(
@@ -1300,6 +1305,50 @@ class ChatService:
             return None
         return event.message_id
 
+    def _build_long_term_store(self) -> LongTermMemoryStore | None:
+        if self._config.postgres.enabled:
+            return PostgresLongTermStore(self._config.postgres)
+        return None
+
+    def _build_long_term_context(
+        self,
+        scope_type: str,
+        scope_id: int | None,
+        user_input: str,
+    ) -> str:
+        if self._long_term_store is None:
+            return ""
+
+        import re
+
+        tokens = re.findall(r"[\u4e00-\u9fa5a-zA-Z0-9]{2,}", user_input)
+        stop_words = {
+            "这个",
+            "那个",
+            "什么",
+            "怎么",
+            "为什么",
+            "可以",
+            "不要",
+            "没有",
+            "你好",
+            "谢谢",
+        }
+        keywords = tuple(t for t in tokens if t not in stop_words)
+
+        entries = self._long_term_store.query(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            keywords=keywords if keywords else None,
+            limit=15,
+        )
+
+        if not entries:
+            return ""
+
+        lines = [entry.to_prompt_line() for entry in entries]
+        return "\n".join(lines)
+
     def _build_model_input(
         self,
         event: ParsedMessageEvent,
@@ -1362,6 +1411,24 @@ class ChatService:
                 f"当前消息中提到的用户ID: {', '.join(str(item) for item in event.at_targets) or '无'}",
                 "当前启用技能规则:",
                 *skill_rules,
+            ]
+        )
+
+        if event.is_group_message():
+            scope_type = "group"
+            scope_id = event.group_id
+        else:
+            scope_type = "user"
+            scope_id = event.user_id
+
+        long_term_text = self._build_long_term_context(
+            scope_type, scope_id, agent_input.text
+        )
+        if long_term_text:
+            lines.extend(["[长期记忆]", long_term_text])
+
+        lines.extend(
+            [
                 "消息内容:",
                 agent_input.text,
             ]

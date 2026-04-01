@@ -38,7 +38,9 @@ from chat_app.memory.manager import ConversationMemory
 from chat_app.memory.store import InMemoryMemoryStore
 from chat_app.memory.summarizer import ConversationSummarizer
 from chat_app.memory.types import MemoryPolicy, MemorySessionScope
+from chat_app.memory.long_term import LongTermMemoryEntry, LongTermMemoryStore
 from chat_app.postgres.memory_store import PostgresMemoryStore
+from chat_app.postgres.long_term_store import PostgresLongTermStore
 from chat_app.skills.context import SkillContext
 from chat_app.skills.registry import resolve_skill_runtime
 
@@ -114,6 +116,11 @@ class ChatSession:
         self._summarizer = ConversationSummarizer(
             self._client,
             config.memory.max_summary_chars,
+        )
+        self._long_term_store = self._build_long_term_store()
+        self._long_term_scope_type = "group" if session_kind == "group" else "user"
+        self._long_term_scope_id = (
+            memory_scope.group_id if session_kind == "group" else memory_scope.user_id
         )
 
     def ask(
@@ -195,7 +202,49 @@ class ChatSession:
 
         system_prompt = self._config.system_prompt.strip()
         skill_prompt = "\n".join([system_prompt, "[当前启用技能规则]", *extra_rules])
+
+        long_term_text = self._build_long_term_context(user_input)
+        if long_term_text:
+            skill_prompt = f"{skill_prompt}\n\n[长期记忆]\n{long_term_text}"
+
         return self._memory.build_messages(skill_prompt, user_input)
+
+    def _build_long_term_context(self, user_input: str) -> str:
+        if self._long_term_store is None:
+            return ""
+
+        keywords = self._extract_keywords(user_input)
+        entries = self._long_term_store.query(
+            scope_type=self._long_term_scope_type,
+            scope_id=self._long_term_scope_id,
+            keywords=keywords if keywords else None,
+            limit=15,
+        )
+
+        if not entries:
+            return ""
+
+        lines = [entry.to_prompt_line() for entry in entries]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _extract_keywords(text: str) -> tuple[str, ...]:
+        import re
+
+        tokens = re.findall(r"[\u4e00-\u9fa5a-zA-Z0-9]{2,}", text)
+        stop_words = {
+            "这个",
+            "那个",
+            "什么",
+            "怎么",
+            "为什么",
+            "可以",
+            "不要",
+            "没有",
+            "你好",
+            "谢谢",
+        }
+        return tuple(t for t in tokens if t not in stop_words)
 
     def _invoke_with_tools(
         self, messages: list[object], tools: tuple[BaseTool, ...]
@@ -313,6 +362,11 @@ class ChatSession:
         if self._config.postgres.enabled:
             return PostgresMemoryStore(self._config.postgres)
         return InMemoryMemoryStore()
+
+    def _build_long_term_store(self) -> LongTermMemoryStore | None:
+        if self._config.postgres.enabled:
+            return PostgresLongTermStore(self._config.postgres)
+        return None
 
     @staticmethod
     def _build_memory_scope(

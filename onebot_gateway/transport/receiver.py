@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import traceback
 
 from chat_app.config import load_config
 from chat_app.postgres import ensure_postgres_ready
@@ -22,8 +23,7 @@ async def main() -> None:
     app_config = load_config()
     ensure_postgres_ready(app_config)
     message_store = MessageStore()
-    chat_service = ChatService(
-        app_config,
+    chat_service = ChatService.from_env(
         reply_with_quote=config.reply_with_quote,
         reply_split_config=config.reply_split,
     )
@@ -102,6 +102,7 @@ async def main() -> None:
                         )
             except Exception as exc:
                 print(f"处理消息时出错: {exc}")
+                traceback.print_exc()
 
 
 def run() -> None:

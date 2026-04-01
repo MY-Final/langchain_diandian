@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 from types import ModuleType
+from typing import Any
 
 from chat_app.config import PostgresConfig
 from chat_app.memory.long_term import LongTermMemoryEntry, LongTermMemoryStore
@@ -26,6 +27,7 @@ class PostgresLongTermStore(LongTermMemoryStore):
         limit: int = 20,
     ) -> list[LongTermMemoryEntry]:
         psycopg = _import_psycopg()
+        dict_row = _import_dict_row()
 
         conditions = ["status = 'active'", "scope_type = %s"]
         params: list[object] = [scope_type]
@@ -62,7 +64,7 @@ class PostgresLongTermStore(LongTermMemoryStore):
         params.append(limit)
 
         with psycopg.connect(**self._config.to_connection_kwargs()) as connection:
-            with connection.cursor(row_factory="dict") as cursor:
+            with connection.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
 
@@ -76,3 +78,17 @@ def _import_psycopg() -> ModuleType:
         raise RuntimeError(
             "PostgreSQL 长期记忆已启用，但未安装 psycopg。请先安装 requirements.txt 里的依赖。"
         ) from exc
+
+
+def _import_dict_row() -> Any:
+    try:
+        rows_module = importlib.import_module("psycopg.rows")
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "PostgreSQL 长期记忆已启用，但当前 psycopg 安装缺少 rows 模块。"
+        ) from exc
+
+    dict_row = getattr(rows_module, "dict_row", None)
+    if not callable(dict_row):
+        raise RuntimeError("psycopg.rows.dict_row 不可用。")
+    return dict_row

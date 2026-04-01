@@ -24,6 +24,7 @@ from onebot_gateway.app.action_executors.base import (
     ChatMessageSender,
 )
 from onebot_gateway.app.action_executors.permissioned import PermissionedActionExecutor
+from onebot_gateway.message.index import MessageIndexService
 
 
 class SendLikeActionExecutor(PermissionedActionExecutor[PendingSendLikeAction]):
@@ -292,6 +293,9 @@ class MarkConversationReadActionExecutor(
 
 
 class RecallMessageActionExecutor(ActionExecutor[PendingRecallMessageAction]):
+    def __init__(self, message_index: MessageIndexService | None) -> None:
+        self._message_index = message_index
+
     async def execute(
         self,
         sender: ChatMessageSender,
@@ -300,9 +304,38 @@ class RecallMessageActionExecutor(ActionExecutor[PendingRecallMessageAction]):
         bot_user_id: int | None = None,
         event=None,
     ) -> ActionResult:
-        await sender.recall_message(action.message_id)
+        if self._message_index is None:
+            return ActionResult(
+                action="recall_message",
+                success=False,
+                message="消息索引未启用，无法执行语义化撤回。",
+            )
+
+        message_index = self._message_index.bind_runtime(
+            onebot_client=sender,
+            self_id=bot_user_id,
+        )
+
+        if action.target_user_id is not None:
+            result = await message_index.recall_last_user_message(
+                group_id=action.chat_id,
+                sender_id=action.target_user_id,
+            )
+        else:
+            result = await message_index.recall_last_self_message(
+                chat_type=action.chat_type,
+                chat_id=action.chat_id,
+            )
+
+        if result.success:
+            return ActionResult(
+                action="recall_message",
+                success=True,
+                message=result.message or "撤回成功。",
+            )
+
         return ActionResult(
             action="recall_message",
-            success=True,
-            message=f"已撤回消息 {action.message_id}。",
+            success=False,
+            message=result.message or f"撤回失败: {result.error_code}",
         )

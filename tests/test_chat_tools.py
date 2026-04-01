@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from chat_app.chat import ChatSession
 from chat_app.config import AppConfig
+from chat_app.skills.message_recall import PendingRecallMessageAction
 
 
 class FakeBoundClient:
@@ -68,6 +69,56 @@ class ChatToolsTests(unittest.TestCase):
             reply = session.ask("请开心一点地回复我")
 
         self.assertEqual(reply, '好的 <face id="14" />')
+
+    def test_parses_recall_last_self_message_action(self) -> None:
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("chat_app.chat.ChatOpenAI", FakeChatOpenAI):
+            session = ChatSession(config)
+
+        session._try_parse_pending_action(
+            "recall_last_self_message",
+            '{"action": "recall_message", "chat_type": "private", "chat_id": 123}',
+        )
+
+        pending = session.get_pending_actions()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(
+            pending[0],
+            PendingRecallMessageAction(chat_type="private", chat_id=123),
+        )
+
+    def test_parses_recall_last_user_message_action(self) -> None:
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("chat_app.chat.ChatOpenAI", FakeChatOpenAI):
+            session = ChatSession(config)
+
+        session._try_parse_pending_action(
+            "recall_last_user_message",
+            '{"action": "recall_message", "chat_id": 456, "target_user_id": 789}',
+        )
+
+        pending = session.get_pending_actions()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(
+            pending[0],
+            PendingRecallMessageAction(
+                chat_type="group",
+                chat_id=456,
+                target_user_id=789,
+            ),
+        )
 
 
 if __name__ == "__main__":

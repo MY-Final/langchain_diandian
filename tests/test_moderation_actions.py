@@ -321,6 +321,22 @@ class FakeMuteChatSessionWithAction(FakeMuteChatSession):
         return "已经禁言了该用户"
 
 
+class FakeMuteAsyncEmptyReplyChatSession(FakeMuteChatSession):
+    """模拟模型已产生动作但最终自然语言为空。"""
+
+    async def aask(
+        self,
+        user_input: str,
+        *,
+        runtime_tools: object | None = None,
+        runtime_rules: object = (),
+    ) -> str:
+        from chat_app.skills.group_moderation import PendingMuteAction
+
+        self._pending = (PendingMuteAction(group_id=100, user_id=200, duration=600),)
+        raise ValueError("模型返回了空响应。")
+
+
 class FakeSetAdminChatSessionWithAction(FakeMuteChatSession):
     """返回带有待执行设置管理员动作的会话。"""
 
@@ -450,6 +466,54 @@ class ActionExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(duration, 600)
         self.assertEqual(len(result.action_results), 1)
         self.assertTrue(result.action_results[0].success)
+
+    async def test_empty_model_reply_executes_action_without_auto_reply(self) -> None:
+        sender = FakeActionSender()
+        sender.member_info[10001] = {"role": "owner"}
+        sender.member_info[200] = {"role": "member"}
+
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30003,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [
+                    {"type": "at", "data": {"qq": "10001"}},
+                    {"type": "text", "data": {"text": "禁言他"}},
+                ],
+                "raw_message": "禁言他",
+                "post_type": "message",
+                "group_id": 100,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator(("点点",)).evaluate(event)
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        import onebot_gateway.app.service as svc
+
+        original = svc.ChatSession
+        svc.ChatSession = FakeMuteAsyncEmptyReplyChatSession  # type: ignore[assignment]
+        try:
+            service = ChatService(config)
+            result = await service.handle_event(sender, event, decision)
+        finally:
+            svc.ChatSession = original  # type: ignore[assignment]
+
+        self.assertFalse(result.should_reply)
+        self.assertEqual(len(result.action_results), 1)
+        self.assertEqual(result.reply_text, "")
+        self.assertEqual(result.reply_parts, ())
+        self.assertEqual(len(sender.ban_calls), 1)
+        self.assertEqual(sender.group_calls, [])
 
     async def test_execute_mute_rejected_for_member(self) -> None:
         sender = FakeActionSender()

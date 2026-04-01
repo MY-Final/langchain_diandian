@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,8 @@ from typing import Any
 from onebot_gateway.message.adapter import AgentInput
 from onebot_gateway.message.parser import ParsedMessageEvent
 from onebot_gateway.message.reply_splitter import ReplySplitter
+
+logger = logging.getLogger(__name__)
 
 
 class ModelInputBuilder:
@@ -132,12 +135,16 @@ class ModelInputBuilder:
         }
         keywords = tuple(t for t in tokens if t not in stop_words)
 
-        entries = self._long_term_store.query(
-            scope_type=scope_type,
-            scope_id=scope_id,
-            keywords=keywords if keywords else None,
-            limit=15,
-        )
+        try:
+            entries = self._long_term_store.query(
+                scope_type=scope_type,
+                scope_id=scope_id,
+                keywords=keywords if keywords else None,
+                limit=15,
+            )
+        except Exception as exc:
+            logger.warning("读取长期记忆失败，已跳过: %s", exc)
+            return ""
 
         if not entries:
             return ""

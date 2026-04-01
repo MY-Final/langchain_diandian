@@ -32,6 +32,7 @@ from chat_app.skills.friend_management import (
     PendingDeleteFriendAction,
     PendingSendLikeAction,
 )
+from chat_app.skills.message_recall import PendingRecallMessageAction
 from chat_app.skills.message_state import PendingMarkConversationReadAction
 from chat_app.config import AppConfig
 from chat_app.memory.manager import ConversationMemory
@@ -56,6 +57,7 @@ PendingCommand = (
     | PendingSetDIYOnlineStatusAction
     | PendingSetFriendAddRequestAction
     | PendingMarkConversationReadAction
+    | PendingRecallMessageAction
 )
 
 
@@ -524,5 +526,22 @@ class ChatSession:
                 PendingMarkConversationReadAction(
                     scope=str(data.get("scope", "current")),
                     target_id=None if target_id is None else int(target_id),
+                )
+            )
+            return
+        if tool_name == "recall_last_self_message" and action_name == "recall_message":
+            self._pending_actions.append(
+                PendingRecallMessageAction(
+                    chat_type=str(data.get("chat_type", "")),
+                    chat_id=int(data["chat_id"]),
+                )
+            )
+            return
+        if tool_name == "recall_last_user_message" and action_name == "recall_message":
+            self._pending_actions.append(
+                PendingRecallMessageAction(
+                    chat_type="group",
+                    chat_id=int(data["chat_id"]),
+                    target_user_id=int(data["target_user_id"]),
                 )
             )

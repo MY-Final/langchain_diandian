@@ -9,10 +9,16 @@ from dataclasses import dataclass
 class PendingRecallMessageAction:
     """待执行的消息撤回动作。"""
 
-    message_id: int
+    chat_type: str
+    chat_id: int
+    target_user_id: int | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "action": "recall_message",
-            "message_id": self.message_id,
+            "chat_type": self.chat_type,
+            "chat_id": self.chat_id,
         }
+        if self.target_user_id is not None:
+            result["target_user_id"] = self.target_user_id
+        return result

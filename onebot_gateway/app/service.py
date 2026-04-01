@@ -5,6 +5,7 @@
 - model_input_builder: 模型输入拼装
 - reply_sender: 回复发送
 - permission: 权限校验
+- message_index: 消息索引
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from onebot_gateway.message.adapter import (
     AgentInput,
     build_agent_input,
 )
+from onebot_gateway.message.index import MessageIndexService
+from onebot_gateway.message.index_config import load_message_index_config
 from onebot_gateway.message.parser import ParsedMessageEvent
 from onebot_gateway.message.reply_splitter import ReplySplitter
 from onebot_gateway.message.trigger import TriggerDecision
@@ -66,7 +69,11 @@ from onebot_gateway.app.action_executors.private_actions import (
 )
 from onebot_gateway.app.model_input_builder import ModelInputBuilder
 from onebot_gateway.app.permission import PermissionChecker
-from onebot_gateway.app.reply_sender import send_reply_parts, split_reply_text
+from onebot_gateway.app.reply_sender import (
+    SendReplyResult,
+    send_reply_parts,
+    split_reply_text,
+)
 from onebot_gateway.app.protocol import ChatMessageSender
 from onebot_gateway.app.types import (
     ActionResult,
@@ -118,11 +125,13 @@ class ChatService:
         *,
         reply_with_quote: bool = True,
         reply_split_config: ReplySplitConfig = DEFAULT_REPLY_SPLIT_CONFIG,
+        message_index: MessageIndexService | None = None,
     ) -> None:
         self._config = config
         self._reply_with_quote = reply_with_quote
         self._reply_splitter = ReplySplitter(reply_split_config)
         self._sessions: dict[tuple[str, int], ChatSession] = {}
+        self._message_index = message_index
 
         self._permission_checker = PermissionChecker(
             trusted_operator_ids=config.operator_user_ids,
@@ -141,10 +150,28 @@ class ChatService:
         reply_split_config: ReplySplitConfig = DEFAULT_REPLY_SPLIT_CONFIG,
     ) -> ChatService:
         """从环境变量加载 LangChain 配置。"""
+        index_config = load_message_index_config()
+        message_index: MessageIndexService | None = None
+        if index_config.enabled:
+            message_index = MessageIndexService(
+                enabled=index_config.enabled,
+                redis_url=index_config.redis_url,
+                key_prefix=index_config.key_prefix,
+                ttl_seconds=index_config.ttl_seconds,
+                chat_maxlen=index_config.chat_maxlen,
+                user_maxlen=index_config.user_maxlen,
+                self_maxlen=index_config.self_maxlen,
+                recall_window_seconds=index_config.recall_window_seconds,
+                connect_timeout_ms=index_config.connect_timeout_ms,
+                socket_timeout_ms=index_config.socket_timeout_ms,
+                group_self_no_window_when_admin=index_config.group_self_no_window_when_admin,
+            )
+
         return cls(
             load_config(),
             reply_with_quote=reply_with_quote,
             reply_split_config=reply_split_config,
+            message_index=message_index,
         )
 
     async def handle_event(
@@ -164,7 +191,11 @@ class ChatService:
                 agent_input=agent_input,
             )
 
+        self._record_received_event(event)
+
         session = self._get_session(event)
+        self._set_current_sender(sender)
+        self._bind_message_index_runtime(sender, event.self_id)
         skill_runtime = resolve_skill_runtime(
             self._build_skill_context(event), sender=sender
         )
@@ -173,26 +204,28 @@ class ChatService:
             event, agent_input, skill_runtime.rules
         )
         aask = getattr(session, "aask", None)
-        if callable(aask):
-            reply_text = await aask(
-                model_input,
-                runtime_tools=skill_runtime.tools,
-                runtime_rules=skill_runtime.rules,
-            )
-        else:
-            reply_text = session.ask(
-                model_input,
-                runtime_tools=skill_runtime.tools,
-                runtime_rules=skill_runtime.rules,
-            )
+        try:
+            if callable(aask):
+                reply_text = await aask(
+                    model_input,
+                    runtime_tools=skill_runtime.tools,
+                    runtime_rules=skill_runtime.rules,
+                )
+            else:
+                reply_text = session.ask(
+                    model_input,
+                    runtime_tools=skill_runtime.tools,
+                    runtime_rules=skill_runtime.rules,
+                )
+        except ValueError as exc:
+            if not self._can_continue_after_empty_model_reply(exc, session):
+                raise
+            reply_text = ""
 
-        reply_parts = split_reply_text(reply_text, self._reply_splitter)
         get_last_tool_traces = getattr(session, "get_last_tool_traces", None)
         tool_traces = (
             tuple(get_last_tool_traces()) if callable(get_last_tool_traces) else ()
         )
-        if not reply_parts:
-            reply_parts = (reply_text,)
 
         pending_actions = self._collect_pending_actions(session)
         action_results: tuple[ActionResult, ...] = ()
@@ -201,9 +234,25 @@ class ChatService:
                 sender, event, pending_actions
             )
 
+        reply_text = reply_text.strip()
+        reply_parts = (
+            split_reply_text(reply_text, self._reply_splitter) if reply_text else ()
+        )
+
+        if not reply_parts:
+            return ChatHandleResult(
+                should_reply=False,
+                reply_text="",
+                reply_parts=(),
+                tool_traces=tool_traces,
+                agent_input=agent_input,
+                action_results=action_results,
+            )
+
+        send_result: SendReplyResult | None = None
         if event.is_private_message():
             assert event.user_id is not None
-            await send_reply_parts(
+            send_result = await send_reply_parts(
                 send=sender.send_private_message,
                 target_id=event.user_id,
                 reply_parts=reply_parts,
@@ -211,7 +260,7 @@ class ChatService:
             )
         elif event.is_group_message():
             assert event.group_id is not None
-            await send_reply_parts(
+            send_result = await send_reply_parts(
                 send=sender.send_group_message,
                 target_id=event.group_id,
                 reply_parts=reply_parts,
@@ -226,6 +275,8 @@ class ChatService:
                 agent_input=agent_input,
                 action_results=action_results,
             )
+
+        self._record_sent_messages(event, send_result)
 
         return ChatHandleResult(
             should_reply=True,
@@ -296,7 +347,10 @@ class ChatService:
         dispatcher.register(
             PendingMarkConversationReadAction, MarkConversationReadActionExecutor(perm)
         )
-        dispatcher.register(PendingRecallMessageAction, RecallMessageActionExecutor())
+        dispatcher.register(
+            PendingRecallMessageAction,
+            RecallMessageActionExecutor(self._message_index),
+        )
         dispatcher.register(
             PendingSendGroupNoticeAction, SendGroupNoticeActionExecutor(perm)
         )
@@ -367,7 +421,26 @@ class ChatService:
             if event.user_id
             else False,
             supports_live_onebot_queries=True,
+            message_index=self._message_index,
+            onebot_sender=self._onebot_sender_for_skills,
         )
+
+    @property
+    def _onebot_sender_for_skills(self) -> ChatMessageSender | None:
+        """返回可用于 skill 运行时工具的 sender。"""
+        return getattr(self, "_current_sender", None)
+
+    def _set_current_sender(self, sender: ChatMessageSender) -> None:
+        self._current_sender = sender
+
+    def _bind_message_index_runtime(
+        self,
+        sender: ChatMessageSender,
+        self_id: int | None,
+    ) -> None:
+        if self._message_index is None:
+            return
+        self._message_index.bind_runtime(onebot_client=sender, self_id=self_id)
 
     def _get_reply_message_id(self, event: ParsedMessageEvent) -> int | None:
         if not self._reply_with_quote:
@@ -378,3 +451,70 @@ class ChatService:
         if self._config.postgres.enabled:
             return PostgresLongTermStore(self._config.postgres)
         return None
+
+    @staticmethod
+    def _can_continue_after_empty_model_reply(
+        exc: Exception,
+        session: ChatSession,
+    ) -> bool:
+        if str(exc) != "模型返回了空响应。":
+            return False
+        getter = getattr(session, "get_pending_actions", None)
+        if not callable(getter):
+            return False
+        return bool(tuple(getter()))
+
+    def _record_received_event(self, event: ParsedMessageEvent) -> None:
+        """记录收到的消息事件到索引。"""
+        if self._message_index is None:
+            return
+        if event.message_id is None:
+            return
+
+        chat_type = "group" if event.is_group_message() else "private"
+        chat_id = event.group_id if event.is_group_message() else event.user_id
+        if chat_id is None:
+            return
+
+        self._message_index.record_received_message(
+            message_id=event.message_id,
+            message_type=chat_type,
+            chat_id=chat_id,
+            group_id=event.group_id,
+            user_id=event.user_id,
+            sender_id=event.user_id or 0,
+            self_id=event.self_id or 0,
+            content_preview=event.plain_text[:100],
+            event_time=event.time,
+            role=event.sender.role if event.sender else "member",
+        )
+
+    def _record_sent_messages(
+        self,
+        event: ParsedMessageEvent,
+        send_result: SendReplyResult | None,
+    ) -> None:
+        """记录 bot 发送的消息到索引。"""
+        if self._message_index is None or send_result is None:
+            return
+
+        chat_type = "group" if event.is_group_message() else "private"
+        chat_id = event.group_id if event.is_group_message() else event.user_id
+        if chat_id is None:
+            return
+
+        self_id = event.self_id or 0
+        sender_id = self_id
+
+        for sent_msg in send_result.sent_messages:
+            if sent_msg.message_id is None:
+                continue
+            self._message_index.record_sent_message(
+                message_id=sent_msg.message_id,
+                message_type=chat_type,
+                chat_id=chat_id,
+                group_id=event.group_id,
+                sender_id=sender_id,
+                self_id=self_id,
+                content_preview=sent_msg.part_text[:100],
+            )

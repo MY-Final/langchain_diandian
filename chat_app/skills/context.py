@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from onebot_gateway.message.index import MessageIndexService
 
 
 @dataclass(frozen=True)
@@ -15,6 +18,8 @@ class SkillContext:
     group_id: int | None = None
     is_trusted_operator: bool = False
     supports_live_onebot_queries: bool = False
+    message_index: MessageIndexService | None = None
+    onebot_sender: Any = None
 
     def is_private_message(self) -> bool:
         return self.session_kind == "private"

@@ -294,6 +294,9 @@ class MessageIndexService:
     def _build_user_key(self, chat_type: str, chat_id: int, sender_id: int) -> str:
         return f"{self._key_prefix}:user:{chat_type}:{chat_id}:{sender_id}"
 
+    def _build_dedupe_key(self, message_id: int) -> str:
+        return f"{self._key_prefix}:dedupe:{message_id}"
+
     def _push_json(
         self,
         key: str,
@@ -315,6 +318,19 @@ class MessageIndexService:
             self._redis = None
             raise
 
+    def _mark_message_indexed(self, message_id: int) -> bool:
+        if not self._ensure_redis():
+            raise RuntimeError(RecallErrorCode.REDIS_UNAVAILABLE.value)
+
+        key = self._build_dedupe_key(message_id)
+        try:
+            result = self._redis.set(key, "1", ex=self._ttl_seconds, nx=True)
+        except Exception:
+            self._redis = None
+            raise
+
+        return bool(result)
+
     # -- 记录接口 --
 
     def record_sent_message(
@@ -335,6 +351,13 @@ class MessageIndexService:
         写入会话总索引 + bot 自己消息索引 + 用户维度索引。
         """
         if not self._enabled:
+            return
+
+        try:
+            if not self._mark_message_indexed(message_id):
+                return
+        except Exception as exc:
+            logger.warning("写入发送消息索引失败: %s", exc)
             return
 
         now_ts = int(event_time or time.time())
@@ -396,6 +419,13 @@ class MessageIndexService:
         如果是 bot 自己的消息，也写入 bot 自己消息索引。
         """
         if not self._enabled:
+            return
+
+        try:
+            if not self._mark_message_indexed(message_id):
+                return
+        except Exception as exc:
+            logger.warning("写入接收消息索引失败: %s", exc)
             return
 
         now_ts = int(event_time or time.time())

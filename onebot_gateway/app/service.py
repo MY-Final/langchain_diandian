@@ -67,13 +67,10 @@ from onebot_gateway.app.action_executors.private_actions import (
     SetSelfLongNickActionExecutor,
     SendLikeActionExecutor,
 )
+from onebot_gateway.app.indexed_sender import IndexedChatMessageSender
 from onebot_gateway.app.model_input_builder import ModelInputBuilder
 from onebot_gateway.app.permission import PermissionChecker
-from onebot_gateway.app.reply_sender import (
-    SendReplyResult,
-    send_reply_parts,
-    split_reply_text,
-)
+from onebot_gateway.app.reply_sender import send_reply_parts, split_reply_text
 from onebot_gateway.app.protocol import ChatMessageSender
 from onebot_gateway.app.types import (
     ActionResult,
@@ -182,6 +179,8 @@ class ChatService:
     ) -> ChatHandleResult:
         """处理消息并在需要时回消息。"""
         agent_input = build_agent_input(event, decision)
+        self._record_received_event(event)
+
         if not decision.should_process:
             return ChatHandleResult(
                 should_reply=False,
@@ -191,13 +190,12 @@ class ChatService:
                 agent_input=agent_input,
             )
 
-        self._record_received_event(event)
-
         session = self._get_session(event)
-        self._set_current_sender(sender)
-        self._bind_message_index_runtime(sender, event.self_id)
+        indexed_sender = self._build_indexed_sender(sender, event.self_id)
+        self._set_current_sender(indexed_sender)
+        self._bind_message_index_runtime(indexed_sender, event.self_id)
         skill_runtime = resolve_skill_runtime(
-            self._build_skill_context(event), sender=sender
+            self._build_skill_context(event), sender=indexed_sender
         )
 
         model_input = self._model_input_builder.build(
@@ -231,7 +229,7 @@ class ChatService:
         action_results: tuple[ActionResult, ...] = ()
         if pending_actions:
             action_results = await self._execute_pending_actions(
-                sender, event, pending_actions
+                indexed_sender, event, pending_actions
             )
 
         reply_text = reply_text.strip()
@@ -249,19 +247,18 @@ class ChatService:
                 action_results=action_results,
             )
 
-        send_result: SendReplyResult | None = None
         if event.is_private_message():
             assert event.user_id is not None
-            send_result = await send_reply_parts(
-                send=sender.send_private_message,
+            await send_reply_parts(
+                send=indexed_sender.send_private_message,
                 target_id=event.user_id,
                 reply_parts=reply_parts,
                 reply_message_id=self._get_reply_message_id(event),
             )
         elif event.is_group_message():
             assert event.group_id is not None
-            send_result = await send_reply_parts(
-                send=sender.send_group_message,
+            await send_reply_parts(
+                send=indexed_sender.send_group_message,
                 target_id=event.group_id,
                 reply_parts=reply_parts,
                 reply_message_id=self._get_reply_message_id(event),
@@ -275,8 +272,6 @@ class ChatService:
                 agent_input=agent_input,
                 action_results=action_results,
             )
-
-        self._record_sent_messages(event, send_result)
 
         return ChatHandleResult(
             should_reply=True,
@@ -442,6 +437,19 @@ class ChatService:
             return
         self._message_index.bind_runtime(onebot_client=sender, self_id=self_id)
 
+    def _build_indexed_sender(
+        self,
+        sender: ChatMessageSender,
+        self_id: int | None,
+    ) -> ChatMessageSender:
+        if self._message_index is None:
+            return sender
+        return IndexedChatMessageSender(
+            sender,
+            self._message_index,
+            self_id=self_id,
+        )
+
     def _get_reply_message_id(self, event: ParsedMessageEvent) -> int | None:
         if not self._reply_with_quote:
             return None
@@ -488,33 +496,3 @@ class ChatService:
             event_time=event.time,
             role=event.sender.role if event.sender else "member",
         )
-
-    def _record_sent_messages(
-        self,
-        event: ParsedMessageEvent,
-        send_result: SendReplyResult | None,
-    ) -> None:
-        """记录 bot 发送的消息到索引。"""
-        if self._message_index is None or send_result is None:
-            return
-
-        chat_type = "group" if event.is_group_message() else "private"
-        chat_id = event.group_id if event.is_group_message() else event.user_id
-        if chat_id is None:
-            return
-
-        self_id = event.self_id or 0
-        sender_id = self_id
-
-        for sent_msg in send_result.sent_messages:
-            if sent_msg.message_id is None:
-                continue
-            self._message_index.record_sent_message(
-                message_id=sent_msg.message_id,
-                message_type=chat_type,
-                chat_id=chat_id,
-                group_id=event.group_id,
-                sender_id=sender_id,
-                self_id=self_id,
-                content_preview=sent_msg.part_text[:100],
-            )

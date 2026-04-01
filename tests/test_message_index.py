@@ -41,11 +41,27 @@ class FakeRedis:
     def __init__(self) -> None:
         self.lists: dict[str, list[str]] = {}
         self.ttls: dict[str, int] = {}
+        self.values: dict[str, str] = {}
 
     def pipeline(self) -> FakePipeline:
         return FakePipeline(self)
 
     def ping(self) -> bool:
+        return True
+
+    def set(
+        self,
+        key: str,
+        value: str,
+        *,
+        ex: int | None = None,
+        nx: bool = False,
+    ) -> bool:
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        if ex is not None:
+            self.ttls[key] = ex
         return True
 
     def lpush(self, key: str, value: str) -> int:
@@ -200,6 +216,33 @@ class MessageIndexServiceTests(unittest.IsolatedAsyncioTestCase):
         assert last is not None
         self.assertTrue(last.is_self)
         self.assertEqual(last.role_at_receive, "admin")
+
+    async def test_duplicate_message_id_is_written_only_once(self) -> None:
+        redis_client = FakeRedis()
+        service = self._build_service(redis_client=redis_client)
+
+        service.record_sent_message(
+            message_id=9001,
+            message_type="private",
+            chat_id=42,
+            group_id=None,
+            sender_id=10001,
+            self_id=10001,
+            event_time=100,
+        )
+        service.record_received_message(
+            message_id=9001,
+            message_type="private",
+            chat_id=42,
+            group_id=None,
+            user_id=10001,
+            sender_id=10001,
+            self_id=10001,
+            event_time=101,
+        )
+
+        messages = service.find_recent_self_messages("private", 42, limit=10)
+        self.assertEqual([item.message_id for item in messages], [9001])
 
     async def test_recall_last_self_message_in_private_within_window(self) -> None:
         onebot = FakeOneBotClient()

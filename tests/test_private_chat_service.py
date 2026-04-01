@@ -28,6 +28,24 @@ class FakeSender:
         return None
 
 
+class SpyMessageIndex:
+    """记录消息索引调用。"""
+
+    def __init__(self) -> None:
+        self.received_calls: list[dict[str, object]] = []
+
+    def bind_runtime(
+        self, *, onebot_client: object | None, self_id: int | None
+    ) -> SpyMessageIndex:
+        return self
+
+    def record_received_message(self, **kwargs: object) -> None:
+        self.received_calls.append(dict(kwargs))
+
+    def record_sent_message(self, **kwargs: object) -> None:
+        return None
+
+
 class FakeChatSession:
     """用于替代真实 LangChain 会话。"""
 
@@ -335,6 +353,42 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result.should_reply)
         self.assertEqual(sender.group_calls, [])
+
+    async def test_records_group_message_even_when_not_triggered(self) -> None:
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "user_id": 20002,
+                "message_id": 30005,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [{"type": "text", "data": {"text": "今天天气不错"}}],
+                "raw_message": "今天天气不错",
+                "post_type": "message",
+                "group_id": 123,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator((r"点点",)).evaluate(event)
+        sender = FakeSender()
+        index = SpyMessageIndex()
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("onebot_gateway.app.service.ChatSession", FakeChatSession):
+            service = ChatService(config, message_index=index)  # type: ignore[arg-type]
+            result = await service.handle_event(sender, event, decision)
+
+        self.assertFalse(result.should_reply)
+        self.assertEqual(len(index.received_calls), 1)
+        self.assertEqual(index.received_calls[0]["message_id"], 30005)
+        self.assertEqual(index.received_calls[0]["message_type"], "group")
+        self.assertEqual(index.received_calls[0]["chat_id"], 123)
 
     async def test_can_disable_quote_reply_for_private_message(self) -> None:
         event = parse_message_event(

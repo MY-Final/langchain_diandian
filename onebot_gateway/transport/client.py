@@ -309,6 +309,115 @@ class OneBotWebSocketClient:
             {"flag": flag, "approve": approve, "remark": remark},
         )
 
+    async def recall_message(self, message_id: int | str) -> dict[str, Any]:
+        """撤回消息。"""
+        return await self.request(
+            "delete_msg",
+            {"message_id": str(message_id)},
+        )
+
+    async def _send_group_notice(
+        self, group_id: int | str, content: str, is_pinned: bool = True
+    ) -> dict[str, Any]:
+        """发送群公告。"""
+        return await self.request(
+            "_send_group_notice",
+            {
+                "group_id": str(group_id),
+                "content": content,
+                "is_pinned": is_pinned,
+            },
+        )
+
+    async def _get_group_notice(self, group_id: int | str) -> dict[str, Any]:
+        """获取群公告。"""
+        return await self.request(
+            "_get_group_notice",
+            {"group_id": str(group_id)},
+        )
+
+    async def upload_group_file(
+        self, group_id: int | str, file: str, name: str, folder: str = ""
+    ) -> dict[str, Any]:
+        """上传群文件。"""
+        params: dict[str, str] = {
+            "group_id": str(group_id),
+            "file": file,
+            "name": name,
+        }
+        if folder:
+            params["folder"] = folder
+        return await self.request("upload_group_file", params)
+
+    async def get_group_files(
+        self, group_id: int | str, folder_id: str = ""
+    ) -> dict[str, Any]:
+        """获取群文件列表。"""
+        return await self.request(
+            "get_group_files",
+            {"group_id": str(group_id), "folder_id": folder_id},
+        )
+
+    async def delete_group_file(
+        self, group_id: int | str, file_id: str
+    ) -> dict[str, Any]:
+        """删除群文件。"""
+        return await self.request(
+            "delete_group_file",
+            {"group_id": str(group_id), "file_id": file_id},
+        )
+
+    async def set_essence_msg(self, message_id: int | str) -> dict[str, Any]:
+        """设置精华消息。"""
+        return await self.request(
+            "set_essence_msg",
+            {"message_id": str(message_id)},
+        )
+
+    async def delete_essence_msg(self, message_id: int | str) -> dict[str, Any]:
+        """移除精华消息。"""
+        return await self.request(
+            "delete_essence_msg",
+            {"message_id": str(message_id)},
+        )
+
+    async def get_essence_msg_list(self, group_id: int | str) -> dict[str, Any]:
+        """获取精华消息列表。"""
+        return await self.request(
+            "get_essence_msg_list",
+            {"group_id": str(group_id)},
+        )
+
+    async def upload_private_file(
+        self, user_id: int | str, file: str, name: str = ""
+    ) -> dict[str, Any]:
+        """发送私聊文件。"""
+        params: dict[str, str] = {
+            "user_id": str(user_id),
+            "file": file,
+        }
+        if name:
+            params["name"] = name
+        return await self.request("upload_private_file", params)
+
+    async def send_group_forward_message(
+        self, group_id: int | str, messages: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """发送群合并转发消息。"""
+        return await self.request(
+            "send_group_forward_msg",
+            {"group_id": str(group_id), "messages": messages},
+        )
+
+    async def send_private_forward_message(
+        self, user_id: int | str, messages: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """发送私聊合并转发消息。"""
+        return await self.request(
+            "send_private_forward_msg",
+            {"user_id": str(user_id), "messages": messages},
+        )
+
     async def send_group_message(
         self,
         group_id: int | str,

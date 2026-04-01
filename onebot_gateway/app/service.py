@@ -33,6 +33,26 @@ from chat_app.skills.friend_management import (
     PendingSendLikeAction,
 )
 from chat_app.skills.message_state import PendingMarkConversationReadAction
+from chat_app.skills.message_recall import PendingRecallMessageAction
+from chat_app.skills.group_announcement import (
+    PendingGetGroupNoticeAction,
+    PendingSendGroupNoticeAction,
+)
+from chat_app.skills.group_file import (
+    PendingDeleteGroupFileAction,
+    PendingGetGroupFilesAction,
+    PendingUploadGroupFileAction,
+)
+from chat_app.skills.essence_message import (
+    PendingAddEssenceMessageAction,
+    PendingGetEssenceMessageListAction,
+    PendingRemoveEssenceMessageAction,
+)
+from chat_app.skills.file_send import (
+    PendingSendGroupFileMessageAction,
+    PendingSendPrivateFileAction,
+)
+from chat_app.skills.forward_message import PendingSendForwardMessageAction
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
 from chat_app.skills.context import SkillContext
@@ -73,6 +93,18 @@ PendingCommand = (
     | PendingSetDIYOnlineStatusAction
     | PendingSetFriendAddRequestAction
     | PendingMarkConversationReadAction
+    | PendingRecallMessageAction
+    | PendingSendGroupNoticeAction
+    | PendingGetGroupNoticeAction
+    | PendingUploadGroupFileAction
+    | PendingGetGroupFilesAction
+    | PendingDeleteGroupFileAction
+    | PendingAddEssenceMessageAction
+    | PendingGetEssenceMessageListAction
+    | PendingRemoveEssenceMessageAction
+    | PendingSendPrivateFileAction
+    | PendingSendGroupFileMessageAction
+    | PendingSendForwardMessageAction
 )
 
 
@@ -180,6 +212,56 @@ class ChatMessageSender(Protocol):
 
     async def mark_all_as_read(self) -> dict[str, Any]:
         """设置所有消息已读。"""
+
+    async def recall_message(self, message_id: int | str) -> dict[str, Any]:
+        """撤回消息。"""
+
+    async def _send_group_notice(
+        self, group_id: int | str, content: str, is_pinned: bool = True
+    ) -> dict[str, Any]:
+        """发送群公告。"""
+
+    async def _get_group_notice(self, group_id: int | str) -> dict[str, Any]:
+        """获取群公告。"""
+
+    async def upload_group_file(
+        self, group_id: int | str, file: str, name: str, folder: str = ""
+    ) -> dict[str, Any]:
+        """上传群文件。"""
+
+    async def get_group_files(
+        self, group_id: int | str, folder_id: str = ""
+    ) -> dict[str, Any]:
+        """获取群文件列表。"""
+
+    async def delete_group_file(
+        self, group_id: int | str, file_id: str
+    ) -> dict[str, Any]:
+        """删除群文件。"""
+
+    async def set_essence_msg(self, message_id: int | str) -> dict[str, Any]:
+        """设置精华消息。"""
+
+    async def delete_essence_msg(self, message_id: int | str) -> dict[str, Any]:
+        """移除精华消息。"""
+
+    async def get_essence_msg_list(self, group_id: int | str) -> dict[str, Any]:
+        """获取精华消息列表。"""
+
+    async def upload_private_file(
+        self, user_id: int | str, file: str, name: str = ""
+    ) -> dict[str, Any]:
+        """发送私聊文件。"""
+
+    async def send_group_forward_message(
+        self, group_id: int | str, messages: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """发送群合并转发消息。"""
+
+    async def send_private_forward_message(
+        self, user_id: int | str, messages: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """发送私聊合并转发消息。"""
 
 
 @dataclass
@@ -403,6 +485,52 @@ class ChatService:
                 )
             elif isinstance(action, PendingMarkConversationReadAction):
                 result = await self._execute_mark_conversation_read_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingRecallMessageAction):
+                result = await self._execute_recall_message_action(sender, action)
+            elif isinstance(action, PendingSendGroupNoticeAction):
+                result = await self._execute_send_group_notice_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingGetGroupNoticeAction):
+                result = await self._execute_get_group_notice_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingUploadGroupFileAction):
+                result = await self._execute_upload_group_file_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingGetGroupFilesAction):
+                result = await self._execute_get_group_files_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingDeleteGroupFileAction):
+                result = await self._execute_delete_group_file_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingAddEssenceMessageAction):
+                result = await self._execute_add_essence_message_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingRemoveEssenceMessageAction):
+                result = await self._execute_remove_essence_message_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingGetEssenceMessageListAction):
+                result = await self._execute_get_essence_message_list_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSendPrivateFileAction):
+                result = await self._execute_send_private_file_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSendGroupFileMessageAction):
+                result = await self._execute_send_group_file_message_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSendForwardMessageAction):
+                result = await self._execute_send_forward_message_action(
                     sender, event, action
                 )
             else:
@@ -855,6 +983,207 @@ class ChatService:
             action="mark_conversation_read",
             success=False,
             message=f"不支持的 scope: {action.scope}",
+        )
+
+    async def _execute_recall_message_action(
+        self,
+        sender: ChatMessageSender,
+        action: PendingRecallMessageAction,
+    ) -> ActionResult:
+        await sender.recall_message(action.message_id)
+        return ActionResult(
+            action="recall_message",
+            success=True,
+            message=f"已撤回消息 {action.message_id}。",
+        )
+
+    async def _execute_send_group_notice_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSendGroupNoticeAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "send_group_notice")
+        if denied is not None:
+            return denied
+        await sender._send_group_notice(
+            action.group_id, action.content, is_pinned=action.is_pinned
+        )
+        return ActionResult(
+            action="send_group_notice",
+            success=True,
+            message="已发送群公告。",
+        )
+
+    async def _execute_get_group_notice_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingGetGroupNoticeAction,
+    ) -> ActionResult:
+        result = await sender._get_group_notice(action.group_id)
+        return ActionResult(
+            action="get_group_notice",
+            success=True,
+            message=f"已获取群公告：{result}",
+        )
+
+    async def _execute_upload_group_file_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingUploadGroupFileAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "upload_group_file")
+        if denied is not None:
+            return denied
+        await sender.upload_group_file(
+            action.group_id, action.file, action.name, folder=action.folder
+        )
+        return ActionResult(
+            action="upload_group_file",
+            success=True,
+            message=f"已上传群文件 {action.name}。",
+        )
+
+    async def _execute_get_group_files_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingGetGroupFilesAction,
+    ) -> ActionResult:
+        result = await sender.get_group_files(
+            action.group_id, folder_id=action.folder_id
+        )
+        return ActionResult(
+            action="get_group_files",
+            success=True,
+            message=f"已获取群文件列表：{result}",
+        )
+
+    async def _execute_delete_group_file_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingDeleteGroupFileAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "delete_group_file")
+        if denied is not None:
+            return denied
+        await sender.delete_group_file(action.group_id, action.file_id)
+        return ActionResult(
+            action="delete_group_file",
+            success=True,
+            message=f"已删除群文件 {action.file_id}。",
+        )
+
+    async def _execute_add_essence_message_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingAddEssenceMessageAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "add_essence_message")
+        if denied is not None:
+            return denied
+        await sender.set_essence_msg(action.message_id)
+        return ActionResult(
+            action="add_essence_message",
+            success=True,
+            message=f"已添加精华消息 {action.message_id}。",
+        )
+
+    async def _execute_remove_essence_message_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingRemoveEssenceMessageAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "remove_essence_message")
+        if denied is not None:
+            return denied
+        await sender.delete_essence_msg(action.message_id)
+        return ActionResult(
+            action="remove_essence_message",
+            success=True,
+            message=f"已移除精华消息 {action.message_id}。",
+        )
+
+    async def _execute_get_essence_message_list_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingGetEssenceMessageListAction,
+    ) -> ActionResult:
+        result = await sender.get_essence_msg_list(action.group_id)
+        return ActionResult(
+            action="get_essence_message_list",
+            success=True,
+            message=f"已获取精华消息列表：{result}",
+        )
+
+    async def _execute_send_private_file_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSendPrivateFileAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "send_private_file")
+        if denied is not None:
+            return denied
+        await sender.upload_private_file(action.user_id, action.file)
+        return ActionResult(
+            action="send_private_file",
+            success=True,
+            message=f"已发送私聊文件给用户 {action.user_id}。",
+        )
+
+    async def _execute_send_group_file_message_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSendGroupFileMessageAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "send_group_file_message")
+        if denied is not None:
+            return denied
+        file_name = (
+            action.name if action.name else action.file.split("/")[-1].split("\\")[-1]
+        )
+        await sender.upload_group_file(action.group_id, action.file, file_name)
+        return ActionResult(
+            action="send_group_file_message",
+            success=True,
+            message=f"已上传群文件 {file_name}。",
+        )
+        await sender.send_group_message(
+            action.group_id,
+            [file_segment(action.file, file_name)],
+        )
+        return ActionResult(
+            action="send_group_file_message",
+            success=True,
+            message=f"已发送群文件消息 {file_name}。",
+        )
+
+    async def _execute_send_forward_message_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSendForwardMessageAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "send_forward_message")
+        if denied is not None:
+            return denied
+        messages = [node.to_dict() for node in action.nodes]
+        if action.is_group:
+            await sender.send_group_forward_message(action.target_id, messages)
+        else:
+            await sender.send_private_forward_message(action.target_id, messages)
+        return ActionResult(
+            action="send_forward_message",
+            success=True,
+            message=f"已发送合并转发消息到 {'群聊' if action.is_group else '私聊'} {action.target_id}。",
         )
 
     async def _load_roles_for_targeted_action(

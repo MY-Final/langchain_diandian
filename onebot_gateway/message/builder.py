@@ -83,6 +83,14 @@ def custom_segment(segment_type: str, **data: Any) -> OutgoingMessageSegment:
     )
 
 
+def file_segment(file: str, name: str = "") -> OutgoingMessageSegment:
+    """构造文件消息段。"""
+    data = {"file": file}
+    if name:
+        data["name"] = name
+    return OutgoingMessageSegment(type="file", data=data)
+
+
 def ensure_segments(
     message: str | OutgoingMessageSegment | list[OutgoingMessageSegment],
 ) -> list[OutgoingMessageSegment]:

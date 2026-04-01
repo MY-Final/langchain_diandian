@@ -11,6 +11,12 @@
 [可用技能提示]
 如果你在当前回复里看到[当前启用技能规则]下面列出了工具列表，说明这些技能正在当前会话中启用。请直接调用它们：
 - 群管理：mute_group_member / set_group_admin / kick_group_member / set_group_card / set_group_special_title
+- 群公告：send_group_notice / get_group_notice
+- 群文件：upload_group_file / get_group_files / delete_group_file
+- 精华消息：add_essence_message / remove_essence_message / get_essence_message_list
+- 消息撤回：recall_message
+- 文件发送：send_private_file / send_group_file_message
+- 合并转发：send_forward_message
 - 联系人查询：lookup_contacts / get_contact_profile
 - 消息状态：mark_conversation_read
 - 账号资料：set_qq_profile / set_self_longnick / set_qq_avatar

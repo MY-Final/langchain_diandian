@@ -17,7 +17,13 @@ from chat_app.skills.group_moderation import GROUP_MODERATION_SKILL
 from chat_app.skills.memory_recall import MEMORY_RECALL_SKILL
 from chat_app.skills.message_state import MESSAGE_STATE_SKILL
 from chat_app.skills.message_expression import MESSAGE_EXPRESSION_SKILL
+from chat_app.skills.message_recall import MESSAGE_RECALL_SKILL
 from chat_app.skills.types import SkillRuntime, SkillSpec
+from chat_app.skills.group_announcement import GROUP_ANNOUNCEMENT_SKILL
+from chat_app.skills.group_file import GROUP_FILE_SKILL
+from chat_app.skills.essence_message import ESSENCE_MESSAGE_SKILL
+from chat_app.skills.file_send import FILE_SEND_SKILL
+from chat_app.skills.forward_message import FORWARD_MESSAGE_SKILL
 
 
 class SkillRegistry:
@@ -69,4 +75,10 @@ def _default_skills() -> tuple[SkillSpec, ...]:
         FRIEND_REQUEST_MANAGEMENT_SKILL,
         MESSAGE_STATE_SKILL,
         GROUP_MODERATION_SKILL,
+        MESSAGE_RECALL_SKILL,
+        GROUP_ANNOUNCEMENT_SKILL,
+        GROUP_FILE_SKILL,
+        ESSENCE_MESSAGE_SKILL,
+        FILE_SEND_SKILL,
+        FORWARD_MESSAGE_SKILL,
     )

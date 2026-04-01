@@ -133,6 +133,18 @@ skill 的目标不是让模型直接操作 OneBot 底层接口，而是把某一
 
 默认仅在私聊且发送者属于 `ONEBOT_OPERATOR_USER_IDS` 时启用。
 
+### `group_inspection`
+
+提供：
+
+- `get_group_list`
+- `get_group_detail`
+- `get_group_member_list`
+
+默认在私聊/群聊中启用（需 sender 且允许实时 OneBot 查询）。
+
+这类 skill 属于实时查询，查询结果当轮直接回填给模型，不走 pending-command。
+
 ## 5. 新增 skill 的标准流程
 
 ### 第一步：决定 skill 分类目录

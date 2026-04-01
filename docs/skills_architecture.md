@@ -124,6 +124,16 @@ chat_app/
 - `lookup_contacts`
 - `get_contact_profile`
 
+### `group_inspection`
+
+在私聊或群聊中启用（需 sender 且允许实时 OneBot 查询）。
+
+提供：
+
+- `get_group_list`
+- `get_group_detail`
+- `get_group_member_list`
+
 ### `message_state`
 
 只在私聊且发送者属于受信操作员时启用。

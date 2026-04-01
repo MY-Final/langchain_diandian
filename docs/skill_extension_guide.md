@@ -86,6 +86,7 @@ MY_SKILL = SkillSpec(
 - `message_expression`
 - `memory_recall`
 - `contact_discovery`
+- `group_inspection`
 - `message_state`
 - `friend_management`
 - `account_profile`

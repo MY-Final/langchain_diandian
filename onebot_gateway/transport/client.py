@@ -144,6 +144,30 @@ class OneBotWebSocketClient:
         """设置所有消息已读。"""
         return await self.request("_mark_all_as_read", {})
 
+    async def get_group_list(self) -> list[dict[str, Any]]:
+        """获取群列表。"""
+        response = await self.request("get_group_list", {})
+        data = response.get("data")
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    async def get_group_info(self, group_id: int | str) -> dict[str, Any] | None:
+        """获取群信息。"""
+        response = await self.request("get_group_info", {"group_id": str(group_id)})
+        data = response.get("data")
+        return data if isinstance(data, dict) else None
+
+    async def get_group_member_list(self, group_id: int | str) -> list[dict[str, Any]]:
+        """获取群成员列表。"""
+        response = await self.request(
+            "get_group_member_list", {"group_id": str(group_id)}
+        )
+        data = response.get("data")
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
     async def set_group_ban(
         self, group_id: int | str, user_id: int | str, duration: int = 0
     ) -> dict[str, Any]:

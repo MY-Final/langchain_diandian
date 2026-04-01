@@ -35,6 +35,20 @@ class SkillRegistryTests(unittest.TestCase):
         self.assertIn("kick_group_member", tool_names)
         self.assertTrue(runtime.rules)
 
+    def test_group_context_without_live_sender_excludes_group_inspection(self) -> None:
+        runtime = resolve_skill_runtime(
+            SkillContext(
+                session_kind="group",
+                user_id=12345,
+                group_id=67890,
+                supports_live_onebot_queries=True,
+            )
+        )
+
+        tool_names = {tool.name for tool in runtime.tools}
+        self.assertNotIn("get_group_list", tool_names)
+        self.assertNotIn("get_group_detail", tool_names)
+
     def test_private_non_operator_excludes_private_account_skills(self) -> None:
         runtime = resolve_skill_runtime(
             SkillContext(

@@ -12,6 +12,7 @@ from chat_app.skills.contact_discovery import CONTACT_DISCOVERY_SKILL
 from chat_app.skills.context import SkillContext
 from chat_app.skills.friend_management import FRIEND_MANAGEMENT_SKILL
 from chat_app.skills.friend_request_management import FRIEND_REQUEST_MANAGEMENT_SKILL
+from chat_app.skills.group_inspection import GROUP_INSPECTION_SKILL
 from chat_app.skills.group_moderation import GROUP_MODERATION_SKILL
 from chat_app.skills.memory_recall import MEMORY_RECALL_SKILL
 from chat_app.skills.message_state import MESSAGE_STATE_SKILL
@@ -61,6 +62,7 @@ def _default_skills() -> tuple[SkillSpec, ...]:
         MESSAGE_EXPRESSION_SKILL,
         MEMORY_RECALL_SKILL,
         CONTACT_DISCOVERY_SKILL,
+        GROUP_INSPECTION_SKILL,
         ACCOUNT_PROFILE_SKILL,
         ACCOUNT_STATUS_SKILL,
         FRIEND_MANAGEMENT_SKILL,

@@ -1,4 +1,4 @@
-"""群管理工具。"""
+"""群管理 skill 使用的 tools。"""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import json
 
 from langchain_core.tools import tool
 
-from chat_app.actions.group_management.types import (
+from chat_app.skills.group_moderation.types import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
     PendingKickGroupMemberAction,
     PendingMuteAction,
-    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupCardAction,
     PendingSetGroupSpecialTitleAction,
 )
 

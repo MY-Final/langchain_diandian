@@ -7,14 +7,32 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
 
-from chat_app.actions.group_management import (
+from chat_app.skills.account_profile import (
+    PendingSetQQAvatarAction,
+    PendingSetQQProfileAction,
+    PendingSetSelfLongNickAction,
+)
+from chat_app.skills.account_status import (
+    PendingSetDIYOnlineStatusAction,
+    PendingSetOnlineStatusAction,
+)
+from chat_app.skills.contact_discovery import CONTACT_DISCOVERY_SKILL
+from chat_app.skills.friend_request_management import (
+    PendingSetFriendAddRequestAction,
+)
+from chat_app.skills.group_moderation import (
     PendingAction,
     PendingKickGroupMemberAction,
     PendingMuteAction,
-    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupCardAction,
     PendingSetGroupSpecialTitleAction,
 )
+from chat_app.skills.friend_management import (
+    PendingDeleteFriendAction,
+    PendingSendLikeAction,
+)
+from chat_app.skills.message_state import PendingMarkConversationReadAction
 from chat_app.chat import ChatSession, ToolCallTrace
 from chat_app.config import AppConfig, load_config
 from chat_app.skills.context import SkillContext
@@ -32,6 +50,30 @@ from onebot_gateway.message.trigger import TriggerDecision
 logger = logging.getLogger(__name__)
 
 _ROLE_PRIORITY: dict[str, int] = {"owner": 3, "admin": 2, "member": 1}
+_TRUSTED_PRIVATE_ACTIONS = {
+    "send_like",
+    "delete_friend",
+    "set_qq_profile",
+    "set_self_longnick",
+    "set_qq_avatar",
+    "set_online_status",
+    "set_diy_online_status",
+    "set_friend_add_request",
+    "mark_conversation_read",
+}
+
+PendingCommand = (
+    PendingAction
+    | PendingSendLikeAction
+    | PendingDeleteFriendAction
+    | PendingSetQQProfileAction
+    | PendingSetSelfLongNickAction
+    | PendingSetQQAvatarAction
+    | PendingSetOnlineStatusAction
+    | PendingSetDIYOnlineStatusAction
+    | PendingSetFriendAddRequestAction
+    | PendingMarkConversationReadAction
+)
 
 
 class ChatMessageSender(Protocol):
@@ -47,6 +89,18 @@ class ChatMessageSender(Protocol):
         self, group_id: int | str, user_id: int | str, *, no_cache: bool = True
     ) -> dict[str, Any] | None:
         """获取群成员信息。"""
+
+    async def get_recent_contact(self, count: int = 10) -> list[dict[str, Any]]:
+        """获取最近联系人列表。"""
+
+    async def get_stranger_info(self, user_id: int | str) -> dict[str, Any] | None:
+        """获取账号信息。"""
+
+    async def get_friend_list(self, *, no_cache: bool = True) -> list[dict[str, Any]]:
+        """获取好友列表。"""
+
+    async def get_friends_with_category(self) -> list[dict[str, Any]]:
+        """获取好友分组列表。"""
 
     async def set_group_ban(
         self, group_id: int | str, user_id: int | str, duration: int = 0
@@ -75,6 +129,57 @@ class ChatMessageSender(Protocol):
         self, group_id: int | str, user_id: int | str, special_title: str = ""
     ) -> dict[str, Any]:
         """设置或清空群头衔。"""
+
+    async def send_like(self, user_id: int | str, times: int = 1) -> dict[str, Any]:
+        """点赞。"""
+
+    async def delete_friend(
+        self,
+        user_id: int | str,
+        *,
+        temp_block: bool = True,
+        temp_both_del: bool = False,
+    ) -> dict[str, Any]:
+        """删除好友。"""
+
+    async def set_qq_profile(
+        self,
+        *,
+        nickname: str,
+        personal_note: str = "",
+        sex: str = "unknown",
+    ) -> dict[str, Any]:
+        """设置账号资料。"""
+
+    async def set_self_longnick(self, long_nick: str) -> dict[str, Any]:
+        """设置个性签名。"""
+
+    async def set_qq_avatar(self, file: str) -> dict[str, Any]:
+        """设置头像。"""
+
+    async def set_online_status(
+        self, status: int, ext_status: int = 0, battery_status: int = 0
+    ) -> dict[str, Any]:
+        """设置在线状态。"""
+
+    async def set_diy_online_status(
+        self, face_id: int, face_type: int = 0, wording: str = ""
+    ) -> dict[str, Any]:
+        """设置自定义在线状态。"""
+
+    async def set_friend_add_request(
+        self, flag: str, approve: bool = True, remark: str = ""
+    ) -> dict[str, Any]:
+        """处理好友请求。"""
+
+    async def mark_private_msg_as_read(self, user_id: int | str) -> dict[str, Any]:
+        """设置私聊已读。"""
+
+    async def mark_group_msg_as_read(self, group_id: int | str) -> dict[str, Any]:
+        """设置群聊已读。"""
+
+    async def mark_all_as_read(self) -> dict[str, Any]:
+        """设置所有消息已读。"""
 
 
 @dataclass
@@ -155,12 +260,22 @@ class ChatService:
             )
 
         session = self._get_session(event)
-        skill_runtime = resolve_skill_runtime(self._build_skill_context(event))
-        reply_text = session.ask(
-            self._build_model_input(event, agent_input, skill_runtime.rules),
-            runtime_tools=skill_runtime.tools,
-            runtime_rules=skill_runtime.rules,
+        skill_runtime = resolve_skill_runtime(
+            self._build_skill_context(event), sender=sender
         )
+        aask = getattr(session, "aask", None)
+        if callable(aask):
+            reply_text = await aask(
+                self._build_model_input(event, agent_input, skill_runtime.rules),
+                runtime_tools=skill_runtime.tools,
+                runtime_rules=skill_runtime.rules,
+            )
+        else:
+            reply_text = session.ask(
+                self._build_model_input(event, agent_input, skill_runtime.rules),
+                runtime_tools=skill_runtime.tools,
+                runtime_rules=skill_runtime.rules,
+            )
         reply_parts = tuple(self._reply_splitter.split(reply_text))
         get_last_tool_traces = getattr(session, "get_last_tool_traces", None)
         tool_traces = (
@@ -229,7 +344,7 @@ class ChatService:
     @staticmethod
     def _collect_pending_actions(
         session: ChatSession,
-    ) -> tuple[PendingAction, ...]:
+    ) -> tuple[PendingCommand, ...]:
         getter = getattr(session, "get_pending_actions", None)
         if not callable(getter):
             return ()
@@ -239,7 +354,7 @@ class ChatService:
         self,
         sender: ChatMessageSender,
         event: ParsedMessageEvent,
-        actions: tuple[PendingAction, ...],
+        actions: tuple[PendingCommand, ...],
     ) -> tuple[ActionResult, ...]:
         results: list[ActionResult] = []
         bot_user_id = event.self_id
@@ -259,6 +374,36 @@ class ChatService:
             elif isinstance(action, PendingSetGroupSpecialTitleAction):
                 result = await self._execute_set_group_special_title_action(
                     sender, action, bot_user_id
+                )
+            elif isinstance(action, PendingSendLikeAction):
+                result = await self._execute_send_like_action(sender, event, action)
+            elif isinstance(action, PendingDeleteFriendAction):
+                result = await self._execute_delete_friend_action(sender, event, action)
+            elif isinstance(action, PendingSetQQProfileAction):
+                result = await self._execute_set_qq_profile_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSetSelfLongNickAction):
+                result = await self._execute_set_self_longnick_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSetQQAvatarAction):
+                result = await self._execute_set_qq_avatar_action(sender, event, action)
+            elif isinstance(action, PendingSetOnlineStatusAction):
+                result = await self._execute_set_online_status_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSetDIYOnlineStatusAction):
+                result = await self._execute_set_diy_online_status_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingSetFriendAddRequestAction):
+                result = await self._execute_set_friend_add_request_action(
+                    sender, event, action
+                )
+            elif isinstance(action, PendingMarkConversationReadAction):
+                result = await self._execute_mark_conversation_read_action(
+                    sender, event, action
                 )
             else:
                 result = ActionResult(
@@ -493,6 +638,225 @@ class ChatService:
             message=f"{desc}（目标 {action.user_id}）。",
         )
 
+    async def _execute_send_like_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSendLikeAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "send_like")
+        if denied is not None:
+            return denied
+        await sender.send_like(action.user_id, action.times)
+        return ActionResult(
+            action="send_like",
+            success=True,
+            message=f"已给用户 {action.user_id} 点赞 {action.times} 次。",
+        )
+
+    async def _execute_delete_friend_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingDeleteFriendAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "delete_friend")
+        if denied is not None:
+            return denied
+        await sender.delete_friend(
+            action.user_id,
+            temp_block=action.temp_block,
+            temp_both_del=action.temp_both_del,
+        )
+        return ActionResult(
+            action="delete_friend",
+            success=True,
+            message=f"已删除好友 {action.user_id}。",
+        )
+
+    async def _execute_set_qq_profile_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetQQProfileAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_qq_profile")
+        if denied is not None:
+            return denied
+        await sender.set_qq_profile(
+            nickname=action.nickname,
+            personal_note=action.personal_note,
+            sex=action.sex,
+        )
+        return ActionResult(
+            action="set_qq_profile",
+            success=True,
+            message="已更新账号资料。",
+        )
+
+    async def _execute_set_self_longnick_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetSelfLongNickAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_self_longnick")
+        if denied is not None:
+            return denied
+        await sender.set_self_longnick(action.long_nick)
+        return ActionResult(
+            action="set_self_longnick",
+            success=True,
+            message="已更新个性签名。",
+        )
+
+    async def _execute_set_qq_avatar_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetQQAvatarAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_qq_avatar")
+        if denied is not None:
+            return denied
+        await sender.set_qq_avatar(action.file)
+        return ActionResult(
+            action="set_qq_avatar",
+            success=True,
+            message="已更新头像。",
+        )
+
+    async def _execute_set_online_status_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetOnlineStatusAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_online_status")
+        if denied is not None:
+            return denied
+        await sender.set_online_status(
+            action.status,
+            ext_status=action.ext_status,
+            battery_status=action.battery_status,
+        )
+        return ActionResult(
+            action="set_online_status",
+            success=True,
+            message="已更新在线状态。",
+        )
+
+    async def _execute_set_diy_online_status_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetDIYOnlineStatusAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_diy_online_status")
+        if denied is not None:
+            return denied
+        await sender.set_diy_online_status(
+            action.face_id,
+            face_type=action.face_type,
+            wording=action.wording,
+        )
+        return ActionResult(
+            action="set_diy_online_status",
+            success=True,
+            message="已更新自定义在线状态。",
+        )
+
+    async def _execute_set_friend_add_request_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingSetFriendAddRequestAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "set_friend_add_request")
+        if denied is not None:
+            return denied
+        await sender.set_friend_add_request(
+            action.flag,
+            approve=action.approve,
+            remark=action.remark,
+        )
+        return ActionResult(
+            action="set_friend_add_request",
+            success=True,
+            message="已处理好友请求。",
+        )
+
+    async def _execute_mark_conversation_read_action(
+        self,
+        sender: ChatMessageSender,
+        event: ParsedMessageEvent,
+        action: PendingMarkConversationReadAction,
+    ) -> ActionResult:
+        denied = self._ensure_trusted_operator(event, "mark_conversation_read")
+        if denied is not None:
+            return denied
+
+        scope = action.scope.strip().lower()
+        if scope == "all":
+            await sender.mark_all_as_read()
+            return ActionResult(
+                action="mark_conversation_read",
+                success=True,
+                message="已将所有会话标记为已读。",
+            )
+
+        if scope == "current":
+            if event.is_group_message():
+                if event.group_id is None:
+                    return ActionResult(
+                        action="mark_conversation_read",
+                        success=False,
+                        message="当前群聊缺少 group_id。",
+                    )
+                await sender.mark_group_msg_as_read(event.group_id)
+            else:
+                if event.user_id is None:
+                    return ActionResult(
+                        action="mark_conversation_read",
+                        success=False,
+                        message="当前私聊缺少 user_id。",
+                    )
+                await sender.mark_private_msg_as_read(event.user_id)
+            return ActionResult(
+                action="mark_conversation_read",
+                success=True,
+                message="已将当前会话标记为已读。",
+            )
+
+        if action.target_id is None:
+            return ActionResult(
+                action="mark_conversation_read",
+                success=False,
+                message="缺少 target_id，无法标记指定会话为已读。",
+            )
+
+        if scope == "private":
+            await sender.mark_private_msg_as_read(action.target_id)
+            return ActionResult(
+                action="mark_conversation_read",
+                success=True,
+                message=f"已将私聊 {action.target_id} 标记为已读。",
+            )
+
+        if scope == "group":
+            await sender.mark_group_msg_as_read(action.target_id)
+            return ActionResult(
+                action="mark_conversation_read",
+                success=True,
+                message=f"已将群聊 {action.target_id} 标记为已读。",
+            )
+
+        return ActionResult(
+            action="mark_conversation_read",
+            success=False,
+            message=f"不支持的 scope: {action.scope}",
+        )
+
     async def _load_roles_for_targeted_action(
         self,
         sender: ChatMessageSender,
@@ -568,6 +932,40 @@ class ChatService:
 
         raise ValueError(f"暂不支持的消息类型：{event.message_type}")
 
+    def _build_skill_context(self, event: ParsedMessageEvent) -> SkillContext:
+        session_kind = "group" if event.is_group_message() else "private"
+        return SkillContext(
+            session_kind=session_kind,
+            user_id=event.user_id,
+            group_id=event.group_id,
+            is_trusted_operator=self._is_trusted_operator(event.user_id),
+            supports_live_onebot_queries=True,
+        )
+
+    def _ensure_trusted_operator(
+        self, event: ParsedMessageEvent, action_name: str
+    ) -> ActionResult | None:
+        if action_name not in _TRUSTED_PRIVATE_ACTIONS:
+            return None
+        if not event.is_private_message():
+            return ActionResult(
+                action=action_name,
+                success=False,
+                message="权限不足：该技能仅允许在私聊中由受信操作员使用。",
+            )
+        if self._is_trusted_operator(event.user_id):
+            return None
+        return ActionResult(
+            action=action_name,
+            success=False,
+            message="权限不足：该技能仅允许受信操作员使用。",
+        )
+
+    def _is_trusted_operator(self, user_id: int | None) -> bool:
+        if user_id is None:
+            return False
+        return int(user_id) in self._config.operator_user_ids
+
     def _get_reply_message_id(self, event: ParsedMessageEvent) -> int | None:
         if not self._reply_with_quote:
             return None
@@ -627,15 +1025,6 @@ class ChatService:
             ]
         )
         return "\n".join(lines)
-
-    @staticmethod
-    def _build_skill_context(event: ParsedMessageEvent) -> SkillContext:
-        session_kind = "group" if event.is_group_message() else "private"
-        return SkillContext(
-            session_kind=session_kind,
-            user_id=event.user_id,
-            group_id=event.group_id,
-        )
 
     @staticmethod
     def _format_message_time(message_time: int | None) -> str:

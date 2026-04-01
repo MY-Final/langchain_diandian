@@ -13,6 +13,8 @@ class SkillContext:
     session_kind: Literal["private", "group"]
     user_id: int | None = None
     group_id: int | None = None
+    is_trusted_operator: bool = False
+    supports_live_onebot_queries: bool = False
 
     def is_private_message(self) -> bool:
         return self.session_kind == "private"

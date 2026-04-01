@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from chat_app.config import (
     load_dotenv_file,
+    load_config,
     load_memory_config,
     load_postgres_config,
     load_prompt_text,
@@ -143,6 +144,26 @@ class LoadPostgresConfigTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "POSTGRES_DB"):
                 load_postgres_config()
+
+
+class LoadAppConfigTests(unittest.TestCase):
+    """验证 AppConfig 额外字段加载。"""
+
+    def test_loads_operator_user_ids(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY": "key",
+                "OPENAI_BASE_URL": "http://example.com/v1",
+                "OPENAI_MODEL": "test-model",
+                "SYSTEM_PROMPT": "你是测试助手。",
+                "ONEBOT_OPERATOR_USER_IDS": "10001, 10002",
+            },
+            clear=True,
+        ):
+            config = load_config()
+
+        self.assertEqual(config.operator_user_ids, (10001, 10002))
 
 
 if __name__ == "__main__":

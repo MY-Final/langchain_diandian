@@ -121,6 +121,7 @@ class AppConfig:
     system_prompt: str
     memory: MemoryConfig = field(default_factory=default_memory_config)
     postgres: PostgresConfig = field(default_factory=default_postgres_config)
+    operator_user_ids: tuple[int, ...] = ()
     debug_tool_calls: bool = False
 
 
@@ -192,6 +193,7 @@ def load_config() -> AppConfig:
         system_prompt=resolved_prompt,
         memory=load_memory_config(),
         postgres=load_postgres_config(),
+        operator_user_ids=_parse_int_tuple(os.getenv("ONEBOT_OPERATOR_USER_IDS", "")),
         debug_tool_calls=_parse_bool(os.getenv("CHAT_DEBUG_TOOL_CALLS", "false")),
     )
 
@@ -330,3 +332,14 @@ def _parse_positive_int(raw_value: str, default: int, key_name: str) -> int:
     if parsed <= 0:
         raise ValueError(f"{key_name} 必须是正整数。")
     return parsed
+
+
+def _parse_int_tuple(raw_value: str) -> tuple[int, ...]:
+    """解析逗号分隔的整数列表。"""
+    parts = [item.strip() for item in raw_value.split(",")]
+    values: list[int] = []
+    for item in parts:
+        if not item:
+            continue
+        values.append(int(item))
+    return tuple(values)

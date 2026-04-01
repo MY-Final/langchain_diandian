@@ -4,7 +4,7 @@
 
 ## 目标
 
-`skills` 的目标不是替代 `actions`，而是把底层工具和规则按业务场景分组，再按上下文动态暴露给 agent。
+`skills` 的目标是把底层工具和规则按业务场景分组，再按上下文动态暴露给 agent。
 
 这样做是因为 OneBot / NapCat 底层接口很多，如果直接全部暴露成 tools，会让模型更难选对工具，也会让 prompt 噪音越来越大。
 
@@ -19,16 +19,7 @@
 - 封装 NapCat / OneBot action API
 - 不直接面向 agent
 
-### 2. Action 层
-
-- `chat_app/actions/group_management/`
-
-职责：
-
-- 定义结构化动作和原子工具
-- 例如禁言、踢人、设管理员、改名片、改头衔
-
-### 3. Skill 层
+### 2. Skill 层
 
 - `chat_app/skills/`
 
@@ -38,7 +29,7 @@
 - 给当前场景提供规则文本
 - 控制哪些能力在当前上下文启用
 
-### 4. Service / Session 层
+### 3. Service / Session 层
 
 - `onebot_gateway/app/service.py`
 - `chat_app/chat.py`
@@ -58,8 +49,32 @@ chat_app/
     context.py
     registry.py
     types.py
+    contact_discovery/
+      skill.py
+    message_state/
+      skill.py
+      tools.py
+      types.py
     group_moderation/
       skill.py
+      tools.py
+      types.py
+    friend_management/
+      skill.py
+      tools.py
+      types.py
+    account_profile/
+      skill.py
+      tools.py
+      types.py
+    account_status/
+      skill.py
+      tools.py
+      types.py
+    friend_request_management/
+      skill.py
+      tools.py
+      types.py
     message_expression/
       skill.py
     memory_recall/
@@ -100,6 +115,59 @@ chat_app/
 
 - 让模型注意保持与短期/长期记忆一致
 
+### `contact_discovery`
+
+只在私聊、发送者属于受信操作员且当前支持实时 OneBot 查询时启用。
+
+提供：
+
+- `lookup_contacts`
+- `get_contact_profile`
+
+### `message_state`
+
+只在私聊且发送者属于受信操作员时启用。
+
+提供：
+
+- `mark_conversation_read`
+
+### `friend_management`
+
+只在私聊且发送者属于受信操作员时启用。
+
+提供：
+
+- `send_like`
+- `delete_friend`
+
+### `account_profile`
+
+只在私聊且发送者属于受信操作员时启用。
+
+提供：
+
+- `set_qq_profile`
+- `set_self_longnick`
+- `set_qq_avatar`
+
+### `account_status`
+
+只在私聊且发送者属于受信操作员时启用。
+
+提供：
+
+- `set_online_status`
+- `set_diy_online_status`
+
+### `friend_request_management`
+
+只在私聊且发送者属于受信操作员时启用。
+
+提供：
+
+- `set_friend_add_request`
+
 ## 运行时流程
 
 ```text
@@ -110,25 +178,13 @@ OneBot event
   -> 获得 runtime tools + runtime rules
   -> ChatSession.ask(..., runtime_tools=..., runtime_rules=...)
   -> 模型在当前 skill 范围内调用工具
-  -> service 层执行 action 并做权限校验
+  -> service 层执行结构化命令并做权限校验
 ```
-
-## 为什么保留 actions
-
-因为 `actions` 和 `skills` 不是一回事：
-
-- `action` 是可执行动作
-- `skill` 是面向 agent 的能力包
-
-也就是说：
-
-- `actions` 负责“系统能做什么”
-- `skills` 负责“当前让 agent 知道什么、允许用什么”
 
 ## 后续建议
 
 下一步可以继续做：
 
-1. 增加 `friend_management` skill
-2. 增加长期记忆读取 skill
+1. 增加长期记忆读取 skill
+2. 增加更多 operator-only 的账号/好友管理能力
 3. 把部分细粒度 tools 收敛成更高层的 domain tools

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from chat_app.actions.group_management import (
+from chat_app.skills.group_moderation.tools import (
     kick_group_member,
     mute_group_member,
     set_group_admin,

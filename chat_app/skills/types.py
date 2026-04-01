@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from langchain_core.tools import BaseTool
 
@@ -12,6 +12,7 @@ from chat_app.skills.context import SkillContext
 
 RulesBuilder = Callable[[SkillContext], tuple[str, ...]]
 ToolsBuilder = Callable[[SkillContext], tuple[BaseTool, ...]]
+RuntimeToolsBuilder = Callable[[SkillContext, Any], tuple[BaseTool, ...]]
 AppliesTo = Callable[[SkillContext], bool]
 
 
@@ -24,6 +25,7 @@ class SkillSpec:
     applies_to: AppliesTo
     build_rules: RulesBuilder
     build_tools: ToolsBuilder
+    build_runtime_tools: RuntimeToolsBuilder | None = None
     priority: int = 100
 
 

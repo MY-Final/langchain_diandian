@@ -102,6 +102,48 @@ class OneBotWebSocketClient:
         data = response.get("data")
         return data if isinstance(data, dict) else None
 
+    async def get_recent_contact(self, count: int = 10) -> list[dict[str, Any]]:
+        """获取最近联系人列表。"""
+        response = await self.request("get_recent_contact", {"count": count})
+        data = response.get("data")
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    async def get_stranger_info(self, user_id: int | str) -> dict[str, Any] | None:
+        """获取账号信息。"""
+        response = await self.request("get_stranger_info", {"user_id": str(user_id)})
+        data = response.get("data")
+        return data if isinstance(data, dict) else None
+
+    async def get_friend_list(self, *, no_cache: bool = True) -> list[dict[str, Any]]:
+        """获取好友列表。"""
+        response = await self.request("get_friend_list", {"no_cache": no_cache})
+        data = response.get("data")
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    async def get_friends_with_category(self) -> list[dict[str, Any]]:
+        """获取好友分组列表。"""
+        response = await self.request("get_friends_with_category", {})
+        data = response.get("data")
+        if not isinstance(data, list):
+            return []
+        return [item for item in data if isinstance(item, dict)]
+
+    async def mark_private_msg_as_read(self, user_id: int | str) -> dict[str, Any]:
+        """设置私聊已读。"""
+        return await self.request("mark_private_msg_as_read", {"user_id": str(user_id)})
+
+    async def mark_group_msg_as_read(self, group_id: int | str) -> dict[str, Any]:
+        """设置群聊已读。"""
+        return await self.request("mark_group_msg_as_read", {"group_id": str(group_id)})
+
+    async def mark_all_as_read(self) -> dict[str, Any]:
+        """设置所有消息已读。"""
+        return await self.request("_mark_all_as_read", {})
+
     async def set_group_ban(
         self, group_id: int | str, user_id: int | str, duration: int = 0
     ) -> dict[str, Any]:
@@ -156,6 +198,91 @@ class OneBotWebSocketClient:
                 "user_id": str(user_id),
                 "special_title": special_title,
             },
+        )
+
+    async def send_like(self, user_id: int | str, times: int = 1) -> dict[str, Any]:
+        """给指定用户点赞。"""
+        return await self.request(
+            "send_like",
+            {"user_id": str(user_id), "times": times},
+        )
+
+    async def delete_friend(
+        self,
+        user_id: int | str,
+        *,
+        temp_block: bool = True,
+        temp_both_del: bool = False,
+    ) -> dict[str, Any]:
+        """删除指定好友。"""
+        return await self.request(
+            "delete_friend",
+            {
+                "user_id": str(user_id),
+                "friend_id": str(user_id),
+                "temp_block": temp_block,
+                "temp_both_del": temp_both_del,
+            },
+        )
+
+    async def set_qq_profile(
+        self,
+        *,
+        nickname: str,
+        personal_note: str = "",
+        sex: str = "unknown",
+    ) -> dict[str, Any]:
+        """设置账号资料。"""
+        return await self.request(
+            "set_qq_profile",
+            {
+                "nickname": nickname,
+                "personal_note": personal_note,
+                "sex": sex,
+            },
+        )
+
+    async def set_self_longnick(self, long_nick: str) -> dict[str, Any]:
+        """设置个性签名。"""
+        return await self.request("set_self_longnick", {"longNick": long_nick})
+
+    async def set_qq_avatar(self, file: str) -> dict[str, Any]:
+        """设置头像。"""
+        return await self.request("set_qq_avatar", {"file": file})
+
+    async def set_online_status(
+        self, status: int, ext_status: int = 0, battery_status: int = 0
+    ) -> dict[str, Any]:
+        """设置在线状态。"""
+        return await self.request(
+            "set_online_status",
+            {
+                "status": status,
+                "extStatus": ext_status,
+                "batteryStatus": battery_status,
+            },
+        )
+
+    async def set_diy_online_status(
+        self, face_id: int, face_type: int = 0, wording: str = ""
+    ) -> dict[str, Any]:
+        """设置自定义在线状态。"""
+        return await self.request(
+            "set_diy_online_status",
+            {
+                "face_id": face_id,
+                "face_type": face_type,
+                "wording": wording,
+            },
+        )
+
+    async def set_friend_add_request(
+        self, flag: str, approve: bool = True, remark: str = ""
+    ) -> dict[str, Any]:
+        """处理好友请求。"""
+        return await self.request(
+            "set_friend_add_request",
+            {"flag": flag, "approve": approve, "remark": remark},
         )
 
     async def send_group_message(

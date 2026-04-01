@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import unittest
-from chat_app.actions.group_management import (
+from chat_app.skills.group_moderation import (
     DEFAULT_MUTE_DURATION,
     MAX_MUTE_DURATION,
     PendingKickGroupMemberAction,
     PendingMuteAction,
-    PendingSetGroupCardAction,
     PendingSetGroupAdminAction,
+    PendingSetGroupCardAction,
     PendingSetGroupSpecialTitleAction,
     kick_group_member,
     mute_group_member,
@@ -315,7 +315,7 @@ class FakeMuteChatSessionWithAction(FakeMuteChatSession):
         runtime_tools: object | None = None,
         runtime_rules: object = (),
     ) -> str:
-        from chat_app.actions.group_management import PendingMuteAction
+        from chat_app.skills.group_moderation import PendingMuteAction
 
         self._pending = (PendingMuteAction(group_id=100, user_id=200, duration=600),)
         return "已经禁言了该用户"

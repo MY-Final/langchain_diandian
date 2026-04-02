@@ -137,6 +137,7 @@ class ChatService:
         self._model_input_builder = ModelInputBuilder(
             reply_splitter=self._reply_splitter,
             long_term_store=self._build_long_term_store(),
+            message_index=message_index,
         )
 
     @classmethod
@@ -491,6 +492,7 @@ class ChatService:
             group_id=event.group_id,
             user_id=event.user_id,
             sender_id=event.user_id or 0,
+            sender_name=event.sender.display_name,
             self_id=event.self_id or 0,
             content_preview=event.plain_text[:100],
             event_time=event.time,

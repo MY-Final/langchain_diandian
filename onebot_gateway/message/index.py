@@ -53,6 +53,7 @@ class MessageRecord:
     group_id: int | None
     user_id: int | None
     sender_id: int
+    sender_name: str
     self_id: int
     is_self: bool
     role_at_receive: str
@@ -71,6 +72,7 @@ class MessageRecord:
             "group_id": self.group_id,
             "user_id": self.user_id,
             "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
             "self_id": self.self_id,
             "is_self": self.is_self,
             "role_at_receive": self.role_at_receive,
@@ -91,6 +93,7 @@ class MessageRecord:
             group_id=data.get("group_id"),
             user_id=data.get("user_id"),
             sender_id=data["sender_id"],
+            sender_name=data.get("sender_name", ""),
             self_id=data["self_id"],
             is_self=data.get("is_self", False),
             role_at_receive=data.get("role_at_receive", "member"),
@@ -341,6 +344,7 @@ class MessageIndexService:
         chat_id: int,
         group_id: int | None,
         sender_id: int,
+        sender_name: str = "机器人",
         self_id: int,
         content_preview: str = "",
         trace_id: str = "",
@@ -371,6 +375,7 @@ class MessageIndexService:
             group_id=group_id,
             user_id=None,
             sender_id=sender_id,
+            sender_name=sender_name,
             self_id=self_id,
             is_self=True,
             role_at_receive="member",
@@ -407,6 +412,7 @@ class MessageIndexService:
         group_id: int | None,
         user_id: int | None,
         sender_id: int,
+        sender_name: str = "",
         self_id: int,
         content_preview: str = "",
         trace_id: str = "",
@@ -440,6 +446,7 @@ class MessageIndexService:
             group_id=group_id,
             user_id=user_id,
             sender_id=sender_id,
+            sender_name=sender_name,
             self_id=self_id,
             is_self=is_self,
             role_at_receive=role,
@@ -500,6 +507,66 @@ class MessageIndexService:
 
         key = self._build_self_key(chat_type, chat_id)
         return self._read_records(key, 0, limit - 1)
+
+    def get_recent_chat_messages(
+        self,
+        chat_type: str,
+        chat_id: int,
+        *,
+        limit: int = 8,
+        exclude_message_id: int | None = None,
+    ) -> list[MessageRecord]:
+        """获取某会话最近消息。"""
+        if not self._ensure_redis():
+            return []
+
+        key = self._build_chat_key(chat_type, chat_id)
+        records = self._read_records(key, 0, max(limit * 2, limit) - 1)
+        return self._filter_recent_records(
+            records,
+            limit=limit,
+            exclude_message_id=exclude_message_id,
+        )
+
+    def get_recent_user_messages(
+        self,
+        chat_type: str,
+        chat_id: int,
+        sender_id: int,
+        *,
+        limit: int = 5,
+        exclude_message_id: int | None = None,
+    ) -> list[MessageRecord]:
+        """获取某会话内某发送者最近消息。"""
+        if not self._ensure_redis():
+            return []
+
+        key = self._build_user_key(chat_type, chat_id, sender_id)
+        records = self._read_records(key, 0, max(limit * 2, limit) - 1)
+        return self._filter_recent_records(
+            records,
+            limit=limit,
+            exclude_message_id=exclude_message_id,
+        )
+
+    @staticmethod
+    def _filter_recent_records(
+        records: list[MessageRecord],
+        *,
+        limit: int,
+        exclude_message_id: int | None,
+    ) -> list[MessageRecord]:
+        filtered: list[MessageRecord] = []
+        for record in records:
+            if (
+                exclude_message_id is not None
+                and record.message_id == exclude_message_id
+            ):
+                continue
+            filtered.append(record)
+            if len(filtered) >= limit:
+                break
+        return filtered
 
     # -- 撤回接口 --
 

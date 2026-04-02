@@ -159,6 +159,7 @@ class IndexedChatMessageSender:
             chat_id=chat_id,
             group_id=group_id,
             sender_id=self._self_id,
+            sender_name="机器人",
             self_id=self._self_id,
             content_preview=content_preview,
         )

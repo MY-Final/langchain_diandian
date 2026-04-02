@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI
+
+if TYPE_CHECKING:
+    from langchain_openai import ChatOpenAI as ChatOpenAIType
+
+ChatOpenAI: Any | None = None
 
 from chat_app.skills.account_profile import (
     PendingSetQQAvatarAction,
@@ -88,7 +92,8 @@ class ChatSession:
         session_scope_id: int = 0,
     ) -> None:
         self._config = config
-        self._client = ChatOpenAI(
+        client_class = _load_chat_openai()
+        self._client = client_class(
             api_key=config.api_key,
             base_url=config.base_url,
             model=config.model,
@@ -545,3 +550,14 @@ class ChatSession:
                     target_user_id=int(data["target_user_id"]),
                 )
             )
+
+
+def _load_chat_openai() -> Any:
+    global ChatOpenAI
+    if ChatOpenAI is not None:
+        return ChatOpenAI
+
+    from langchain_openai import ChatOpenAI as loaded_chat_openai
+
+    ChatOpenAI = loaded_chat_openai
+    return loaded_chat_openai

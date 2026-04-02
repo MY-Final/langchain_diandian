@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from onebot_gateway.message.adapter import AgentInput
+from onebot_gateway.message.index import MessageRecord
 from onebot_gateway.message.parser import ParsedMessageEvent
 from onebot_gateway.message.reply_splitter import ReplySplitter
 
@@ -21,9 +22,11 @@ class ModelInputBuilder:
         self,
         reply_splitter: ReplySplitter,
         long_term_store: Any | None = None,
+        message_index: Any | None = None,
     ) -> None:
         self._reply_splitter = reply_splitter
         self._long_term_store = long_term_store
+        self._message_index = message_index
 
     def build(
         self,
@@ -103,6 +106,21 @@ class ModelInputBuilder:
         if long_term_text:
             lines.extend(["[长期记忆]", long_term_text])
 
+        recent_chat_text = self._build_recent_chat_context(event, agent_input)
+        if recent_chat_text:
+            lines.extend(["[最近会话上下文]", recent_chat_text])
+
+        recent_sender_text = self._build_recent_sender_context(event)
+        if recent_sender_text:
+            lines.extend(["[发送者近期发言]", recent_sender_text])
+
+        resolved_reference_text = self._build_resolved_reference_context(
+            event,
+            agent_input,
+        )
+        if resolved_reference_text:
+            lines.extend(["[初步目标解析]", resolved_reference_text])
+
         lines.extend(
             [
                 "消息内容:",
@@ -151,6 +169,148 @@ class ModelInputBuilder:
 
         lines = [entry.to_prompt_line() for entry in entries]
         return "\n".join(lines)
+
+    def _build_recent_chat_context(
+        self,
+        event: ParsedMessageEvent,
+        agent_input: AgentInput,
+    ) -> str:
+        if self._message_index is None:
+            return ""
+
+        chat_id = event.group_id if event.is_group_message() else event.user_id
+        if chat_id is None:
+            return ""
+
+        try:
+            records = self._message_index.get_recent_chat_messages(
+                agent_input.chat_type,
+                chat_id,
+                limit=6,
+                exclude_message_id=event.message_id,
+            )
+        except Exception as exc:
+            logger.warning("读取最近会话上下文失败，已跳过: %s", exc)
+            return ""
+
+        return self._format_recent_records(records)
+
+    def _build_recent_sender_context(self, event: ParsedMessageEvent) -> str:
+        if self._message_index is None:
+            return ""
+        if not event.is_group_message():
+            return ""
+        if event.group_id is None or event.user_id is None:
+            return ""
+
+        try:
+            records = self._message_index.get_recent_user_messages(
+                "group",
+                event.group_id,
+                event.user_id,
+                limit=3,
+                exclude_message_id=event.message_id,
+            )
+        except Exception as exc:
+            logger.warning("读取发送者近期发言失败，已跳过: %s", exc)
+            return ""
+
+        return self._format_recent_records(records)
+
+    def _format_recent_records(self, records: list[MessageRecord]) -> str:
+        if not records:
+            return ""
+
+        lines: list[str] = []
+        for index, record in enumerate(reversed(records), start=1):
+            speaker = self._format_record_speaker(record)
+            content = record.content_preview.strip() or "[非文本消息]"
+            lines.append(f"{index}. {speaker}: {content}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_record_speaker(record: MessageRecord) -> str:
+        if record.is_self:
+            return "机器人"
+        if record.sender_name.strip():
+            return record.sender_name.strip()
+        return f"用户{record.sender_id}"
+
+    def _build_resolved_reference_context(
+        self,
+        event: ParsedMessageEvent,
+        agent_input: AgentInput,
+    ) -> str:
+        lines: list[str] = []
+        if event.at_targets:
+            joined = ", ".join(str(item) for item in event.at_targets)
+            lines.append(f"- 当前消息明确提到的用户ID: {joined}")
+
+        if event.reply_message_id is not None:
+            lines.append(f"- 当前消息引用了 message_id={event.reply_message_id} 的消息")
+
+        recent_target = self._resolve_recent_target_record(event, agent_input)
+        if recent_target is not None:
+            speaker = self._format_record_speaker(recent_target)
+            lines.append(
+                "- 若用户提到“他/她/那条/刚才那个”等近指对象，"
+                f"最近最可能指向: {speaker} (user_id={recent_target.sender_id}, "
+                f"message_id={recent_target.message_id})"
+            )
+            if recent_target.content_preview.strip():
+                lines.append(
+                    f"- 该候选消息内容: {recent_target.content_preview.strip()}"
+                )
+
+        return "\n".join(lines)
+
+    def _resolve_recent_target_record(
+        self,
+        event: ParsedMessageEvent,
+        agent_input: AgentInput,
+    ) -> MessageRecord | None:
+        if self._message_index is None:
+            return None
+        if not self._contains_reference_phrase(agent_input.text):
+            return None
+
+        chat_id = event.group_id if event.is_group_message() else event.user_id
+        if chat_id is None:
+            return None
+
+        try:
+            records = self._message_index.get_recent_chat_messages(
+                agent_input.chat_type,
+                chat_id,
+                limit=6,
+                exclude_message_id=event.message_id,
+            )
+        except Exception as exc:
+            logger.warning("解析近指目标失败，已跳过: %s", exc)
+            return None
+
+        preferred: MessageRecord | None = None
+        fallback: MessageRecord | None = None
+        for record in records:
+            if record.is_self:
+                continue
+            if fallback is None:
+                fallback = record
+            if event.user_id is not None and record.sender_id != event.user_id:
+                preferred = record
+                break
+        return preferred or fallback
+
+    @staticmethod
+    def _contains_reference_phrase(text: str) -> bool:
+        if not text.strip():
+            return False
+        return bool(
+            re.search(
+                r"(刚才|上一条|上条|那条|这一条|这个人|那个人|他|她|它)",
+                text,
+            )
+        )
 
     @staticmethod
     def _format_message_time(message_time: int | None) -> str:

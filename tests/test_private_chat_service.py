@@ -8,6 +8,7 @@ from unittest.mock import patch
 from chat_app.config import AppConfig
 from onebot_gateway.app.service import ChatService
 from onebot_gateway.config import ReplySplitConfig
+from onebot_gateway.message.index import MessageRecord
 from onebot_gateway.message.parser import parse_message_event
 from onebot_gateway.message.trigger import TriggerEvaluator
 
@@ -44,6 +45,35 @@ class SpyMessageIndex:
 
     def record_sent_message(self, **kwargs: object) -> None:
         return None
+
+    def get_recent_chat_messages(
+        self, *args: object, **kwargs: object
+    ) -> list[MessageRecord]:
+        return [
+            MessageRecord(
+                message_id=1,
+                real_id=1,
+                message_type="group",
+                chat_id=123,
+                group_id=123,
+                user_id=30001,
+                sender_id=30001,
+                sender_name="臭鱼",
+                self_id=10001,
+                is_self=False,
+                role_at_receive="member",
+                time=1,
+                received_at=1,
+                content_preview="你是不是有病",
+                trace_id="",
+                source="onebot_event",
+            )
+        ]
+
+    def get_recent_user_messages(
+        self, *args: object, **kwargs: object
+    ) -> list[MessageRecord]:
+        return []
 
 
 class FakeChatSession:
@@ -321,6 +351,39 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("群名片: 群名片A", FakeChatSession.last_question)
         self.assertIn("消息内容:\n点点 帮我看看", FakeChatSession.last_question)
         self.assertEqual(FakeChatSession.last_session_kind, "group")
+
+    async def test_builds_group_prompt_with_recent_chat_context(self) -> None:
+        event = parse_message_event(
+            {
+                "self_id": 10001,
+                "time": 1774928987,
+                "user_id": 20002,
+                "message_id": 30008,
+                "message_type": "group",
+                "sender": {"nickname": "用户A", "card": "群名片A", "role": "member"},
+                "message": [{"type": "text", "data": {"text": "点点 帮我看看"}}],
+                "raw_message": "点点 帮我看看",
+                "post_type": "message",
+                "group_id": 123,
+                "group_name": "测试群",
+            }
+        )
+        assert event is not None
+        decision = await TriggerEvaluator((r"点点",)).evaluate(event)
+        sender = FakeSender()
+        config = AppConfig(
+            api_key="key",
+            base_url="http://example.com/v1",
+            model="test-model",
+            system_prompt="你是测试助手。",
+        )
+
+        with patch("onebot_gateway.app.service.ChatSession", FakeChatSession):
+            service = ChatService(config, message_index=SpyMessageIndex())  # type: ignore[arg-type]
+            await service.handle_event(sender, event, decision)
+
+        self.assertIn("[最近会话上下文]", FakeChatSession.last_question)
+        self.assertIn("臭鱼: 你是不是有病", FakeChatSession.last_question)
 
     async def test_ignores_group_message_without_trigger(self) -> None:
         event = parse_message_event(
